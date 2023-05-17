@@ -13,6 +13,7 @@ class TcpPrinterInput extends BasePrinterInput {
   final String ipAddress;
   final int port;
   final Duration timeout;
+
   TcpPrinterInput({
     required this.ipAddress,
     this.port = 9100,
@@ -22,6 +23,7 @@ class TcpPrinterInput extends BasePrinterInput {
 
 class TcpPrinterInfo {
   String address;
+
   TcpPrinterInfo({
     required this.address,
   });
@@ -29,18 +31,21 @@ class TcpPrinterInfo {
 
 class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   TcpPrinterConnector._();
+
   static TcpPrinterConnector _instance = TcpPrinterConnector._();
 
   static TcpPrinterConnector get instance => _instance;
 
   TcpPrinterConnector();
+
   Socket? _socket;
   TCPStatus status = TCPStatus.none;
 
   Stream<TCPStatus> get _statusStream => _statusStreamController.stream;
   final StreamController<TCPStatus> _statusStreamController = StreamController.broadcast();
 
-  static Future<List<PrinterDiscovered<TcpPrinterInfo>>> discoverPrinters({String? ipAddress, int? port, Duration? timeOut}) async {
+  static Future<List<PrinterDiscovered<TcpPrinterInfo>>> discoverPrinters(
+      {String? ipAddress, int? port, Duration? timeOut}) async {
     final List<PrinterDiscovered<TcpPrinterInfo>> result = [];
     final defaultPort = port ?? 9100;
 
@@ -61,7 +66,8 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
 
     await for (var addr in stream) {
       if (addr.exists) {
-        result.add(PrinterDiscovered<TcpPrinterInfo>(name: "${addr.ip}:$defaultPort", detail: TcpPrinterInfo(address: addr.ip)));
+        result.add(PrinterDiscovered<TcpPrinterInfo>(
+            name: "${addr.ip}:$defaultPort", detail: TcpPrinterInfo(address: addr.ip)));
       }
     }
 
@@ -100,11 +106,10 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       // final _socket = await Socket.connect(_host, _port, timeout: _timeout);
       _socket?.add(Uint8List.fromList(bytes));
       await Future.delayed(Duration(seconds: 1));
-      // await _socket?.flush();
-      // _socket?.destroy();
+      await disconnect();
       return true;
     } catch (e) {
-      _socket?.destroy();
+      await disconnect();
       return false;
     }
   }
@@ -112,28 +117,22 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   @override
   Future<bool> connect(TcpPrinterInput model) async {
     try {
-      if (status == TCPStatus.none) {
-        _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
-        status = TCPStatus.connected;
-        debugPrint('socket connected'); //if opened you will get it here
-        _statusStreamController.add(status);
-
-        // Create ping object with desired args
-        final ping = Ping('${model.ipAddress}', interval: 3, timeout: 7);
-
-        // Begin ping process and listen for output
-        ping.stream.listen((PingData data) {
-          if (data.error != null) {
-            debugPrint(' ----- ping error ${data.error}');
-            _socket?.destroy();
-            status = TCPStatus.none;
-            _statusStreamController.add(status);
-          }
-        });
-        listenSocket(ping);
-      }
+      await _socket?.flush();
+      _socket?.destroy();
+      _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      await _socket?.flush();
+      _socket?.destroy();
+      if (e is SocketException) {
+        debugPrint('Err printer.connect SocketException: $e\n$stackTrace');
+      } else {
+        debugPrint('Err printer.connect OtherException: $e\n$stackTrace');
+        await _socket?.flush();
+        _socket?.close();
+        _socket?.destroy();
+      }
+      _socket?.destroy();
       _socket?.destroy();
       status = TCPStatus.none;
       _statusStreamController.add(status);
@@ -145,7 +144,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   @override
   Future<bool> disconnect({int? delayMs}) async {
     try {
-      // await _socket?.flush();
+      await _socket?.flush();
       _socket?.destroy();
 
       if (delayMs != null) {
