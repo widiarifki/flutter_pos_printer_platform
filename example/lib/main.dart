@@ -37,8 +37,10 @@ class _MyAppState extends State<MyApp> {
   StreamSubscription<USBStatus>? _subscriptionUsbStatus;
   StreamSubscription<TCPStatus>? _subscriptionTCPStatus;
   BTStatus _currentStatus = BTStatus.none;
+
   // ignore: unused_field
   TCPStatus _currentTCPStatus = TCPStatus.none;
+
   // _currentUsbStatus is only supports on Android
   // ignore: unused_field
   USBStatus _currentUsbStatus = USBStatus.none;
@@ -157,7 +159,8 @@ class _MyAppState extends State<MyApp> {
 
   void selectDevice(BluetoothPrinter device) async {
     if (selectedPrinter != null) {
-      if ((device.address != selectedPrinter!.address) || (device.typePrinter == PrinterType.usb && selectedPrinter!.vendorId != device.vendorId)) {
+      if ((device.address != selectedPrinter!.address) ||
+          (device.typePrinter == PrinterType.usb && selectedPrinter!.vendorId != device.vendorId)) {
         await PrinterManager.instance.disconnect(type: selectedPrinter!.typePrinter);
       }
     }
@@ -184,7 +187,10 @@ class _MyAppState extends State<MyApp> {
 
     // sum width total column must be 12
     bytes += generator.row([
-      PosColumn(width: 8, text: 'Lemon lime export quality per pound x 5 units', styles: const PosStyles(align: PosAlign.left, codeTable: 'CP1252')),
+      PosColumn(
+          width: 8,
+          text: 'Lemon lime export quality per pound x 5 units',
+          styles: const PosStyles(align: PosAlign.left, codeTable: 'CP1252')),
       PosColumn(width: 4, text: 'USD 2.00', styles: const PosStyles(align: PosAlign.right, codeTable: 'CP1252')),
     ]);
 
@@ -199,7 +205,7 @@ class _MyAppState extends State<MyApp> {
       // creates a copy of the original image with set dimensions
       img.Image originalImg = img.copyResize(decodedImage, width: 380, height: 130);
       // fills the original image with a white background
-      img.fill(originalImg, color: img.ColorRgb8(255, 255, 255));
+      img.fill(originalImg, 0);
       var padding = (originalImg.width - thumbnail.width) / 2;
 
       //insert the image inside the frame and center it
@@ -210,7 +216,7 @@ class _MyAppState extends State<MyApp> {
 
       bytes += generator.feed(1);
       // bytes += generator.imageRaster(img.decodeImage(imageBytes)!, align: PosAlign.center);
-      bytes += generator.imageRaster(grayscaleImage, align: PosAlign.center);
+      bytes += generator.image(grayscaleImage, align: PosAlign.center);
       bytes += generator.feed(1);
     }
 
@@ -234,7 +240,10 @@ class _MyAppState extends State<MyApp> {
         bytes += generator.cut();
         await printerManager.connect(
             type: bluetoothPrinter.typePrinter,
-            model: UsbPrinterInput(name: bluetoothPrinter.deviceName, productId: bluetoothPrinter.productId, vendorId: bluetoothPrinter.vendorId));
+            model: UsbPrinterInput(
+                name: bluetoothPrinter.deviceName,
+                productId: bluetoothPrinter.productId,
+                vendorId: bluetoothPrinter.vendorId));
         pendingTask = null;
         break;
       case PrinterType.bluetooth:
@@ -252,7 +261,8 @@ class _MyAppState extends State<MyApp> {
       case PrinterType.network:
         bytes += generator.feed(2);
         bytes += generator.cut();
-        connectedTCP = await printerManager.connect(type: bluetoothPrinter.typePrinter, model: TcpPrinterInput(ipAddress: bluetoothPrinter.address!));
+        connectedTCP = await printerManager.connect(
+            type: bluetoothPrinter.typePrinter, model: TcpPrinterInput(ipAddress: bluetoothPrinter.address!));
         if (!connectedTCP) print(' --- please review your connection ---');
         break;
       default:
@@ -275,7 +285,10 @@ class _MyAppState extends State<MyApp> {
       case PrinterType.usb:
         await printerManager.connect(
             type: selectedPrinter!.typePrinter,
-            model: UsbPrinterInput(name: selectedPrinter!.deviceName, productId: selectedPrinter!.productId, vendorId: selectedPrinter!.vendorId));
+            model: UsbPrinterInput(
+                name: selectedPrinter!.deviceName,
+                productId: selectedPrinter!.productId,
+                vendorId: selectedPrinter!.vendorId));
         _isConnected = true;
         break;
       case PrinterType.bluetooth:
@@ -288,7 +301,8 @@ class _MyAppState extends State<MyApp> {
                 autoConnect: _reconnect));
         break;
       case PrinterType.network:
-        await printerManager.connect(type: selectedPrinter!.typePrinter, model: TcpPrinterInput(ipAddress: selectedPrinter!.address!));
+        await printerManager.connect(
+            type: selectedPrinter!.typePrinter, model: TcpPrinterInput(ipAddress: selectedPrinter!.address!));
         _isConnected = true;
         break;
       default:
@@ -332,7 +346,8 @@ class _MyAppState extends State<MyApp> {
                             onPressed: selectedPrinter == null || !_isConnected
                                 ? null
                                 : () {
-                                    if (selectedPrinter != null) printerManager.disconnect(type: selectedPrinter!.typePrinter);
+                                    if (selectedPrinter != null)
+                                      printerManager.disconnect(type: selectedPrinter!.typePrinter);
                                     setState(() {
                                       _isConnected = false;
                                     });
@@ -437,7 +452,8 @@ class _MyAppState extends State<MyApp> {
                               leading: selectedPrinter != null &&
                                       ((device.typePrinter == PrinterType.usb && Platform.isWindows
                                               ? device.deviceName == selectedPrinter!.deviceName
-                                              : device.vendorId != null && selectedPrinter!.vendorId == device.vendorId) ||
+                                              : device.vendorId != null &&
+                                                  selectedPrinter!.vendorId == device.vendorId) ||
                                           (device.address != null && selectedPrinter!.address == device.address))
                                   ? const Icon(
                                       Icons.check,

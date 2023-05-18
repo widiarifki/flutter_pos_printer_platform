@@ -217,7 +217,7 @@ class TsplPrinter<T> extends GenericPrinter<T> {
     final int widthPx = image.width;
     final int heightPx = image.height;
     final int widthBytes = widthPx ~/ 8; // one byte is 8 bits
-    final List<int> imageBytes = image.getBytes(order: img.ChannelOrder.argb);
+    final List<int> imageBytes = image.getBytes(format: img.Format.argb);
 
     List<int> monoPixel = [];
     for (int i = 0; i < imageBytes.length; i += 4) {

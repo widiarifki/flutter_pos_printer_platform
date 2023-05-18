@@ -183,11 +183,11 @@ class BluetoothConnection constructor(handler: Handler) : IBluetoothConnection {
     private fun connectionFailed(result: MethodChannel.Result) {
         // Send a failure message back to the Activity
 //        Log.e(TAG, "Connection Error");
-        val msg = mHandler.obtainMessage(BluetoothConstants.MESSAGE_TOAST)
-        val bundle = Bundle()
-        bundle.putInt(TOAST, R.string.fail_connect_bt)
-        msg.data = bundle
-        mHandler.sendMessage(msg)
+//        val msg = mHandler.obtainMessage(BluetoothConstants.MESSAGE_TOAST)
+//        val bundle = Bundle()
+//        bundle.putInt(TOAST, R.string.fail_connect_bt)
+//        msg.data = bundle
+//        mHandler.sendMessage(msg)
         state = BluetoothConstants.STATE_FAILED
 
         // Give the new state to the Handler so the UI Activity can update
@@ -201,11 +201,11 @@ class BluetoothConnection constructor(handler: Handler) : IBluetoothConnection {
      */
     private fun connectionLost() {
         // Send a failure message back to the Activity
-        val msg = mHandler.obtainMessage(BluetoothConstants.MESSAGE_TOAST)
-        val bundle = Bundle()
-        bundle.putInt(TOAST, R.string.lost_connection_bt)
-        msg.data = bundle
-        mHandler.sendMessage(msg)
+//        val msg = mHandler.obtainMessage(BluetoothConstants.MESSAGE_TOAST)
+//        val bundle = Bundle()
+//        bundle.putInt(TOAST, R.string.lost_connection_bt)
+//        msg.data = bundle
+//        mHandler.sendMessage(msg)
         state = BluetoothConstants.STATE_NONE
     }
 
@@ -334,12 +334,12 @@ class BluetoothConnection constructor(handler: Handler) : IBluetoothConnection {
             } catch (e: IOException) {
 //                Log.e(TAG, "Exception during write", e)
                 // Send a failure message back to the activity.
-                val writeErrorMsg = mHandler.obtainMessage(BluetoothConstants.MESSAGE_TOAST)
-                val bundle = Bundle().apply {
-                    putInt(TOAST, R.string.fail_write_data)
-                }
-                writeErrorMsg.data = bundle
-                mHandler.sendMessage(writeErrorMsg)
+//                val writeErrorMsg = mHandler.obtainMessage(BluetoothConstants.MESSAGE_TOAST)
+//                val bundle = Bundle().apply {
+//                    putInt(TOAST, R.string.fail_write_data)
+//                }
+//                writeErrorMsg.data = bundle
+//                mHandler.sendMessage(writeErrorMsg)
                 return
             }
 
