@@ -126,14 +126,15 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       _socket?.destroy();
       if (e is SocketException) {
         debugPrint('Err printer.connect SocketException: $e\n$stackTrace');
+        await _socket?.flush();
+        _socket?.close();
+        _socket?.destroy();
       } else {
         debugPrint('Err printer.connect OtherException: $e\n$stackTrace');
         await _socket?.flush();
         _socket?.close();
         _socket?.destroy();
       }
-      _socket?.destroy();
-      _socket?.destroy();
       status = TCPStatus.none;
       _statusStreamController.add(status);
       return false;
@@ -152,6 +153,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       }
       return true;
     } catch (e) {
+      await _socket?.flush();
       _socket?.destroy();
       status = TCPStatus.none;
       _statusStreamController.add(status);

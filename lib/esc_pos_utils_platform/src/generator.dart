@@ -8,6 +8,7 @@
 
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'package:flutter_pos_printer_platform/src/ext.dart';
 import 'package:image/image.dart' as img;
 import 'package:gbk_codec/gbk_codec.dart';
 import "package:hex/hex.dart";
@@ -69,8 +70,14 @@ class Generator {
 
   Uint8List _encode(String text, {bool isKanji = false}) {
     // replace some non-ascii characters
-    text =
-        text.replaceAll("’", "'").replaceAll("´", "'").replaceAll("»", '"').replaceAll(" ", ' ').replaceAll("•", '.');
+    text = text
+        .replaceAll("’", "'")
+        .replaceAll("´", "'")
+        .replaceAll("»", '"')
+        .replaceAll(" ", ' ')
+        .replaceAll("•", '.')
+        .replaceNonAscii()
+        .replaceNonPrintable(replaceWith: '');
     if (!isKanji) {
       return latin1.encode(text);
     } else {
@@ -79,23 +86,24 @@ class Generator {
   }
 
   List _getLexemes(String text) {
+    String textCleaned = text.replaceNonAscii().replaceNonPrintable(replaceWith: '');
     final List<String> lexemes = List.empty(growable: true);
     final List<bool> isLexemeChinese = List.empty(growable: true);
     int start = 0;
     int end = 0;
-    bool curLexemeChinese = _isChinese(text[0]);
-    for (var i = 1; i < text.length; ++i) {
-      if (curLexemeChinese == _isChinese(text[i])) {
+    bool curLexemeChinese = _isChinese(textCleaned[0]);
+    for (var i = 1; i < textCleaned.length; ++i) {
+      if (curLexemeChinese == _isChinese(textCleaned[i])) {
         end += 1;
       } else {
-        lexemes.add(text.substring(start, end + 1));
+        lexemes.add(textCleaned.substring(start, end + 1));
         isLexemeChinese.add(curLexemeChinese);
         start = i;
         end = i;
         curLexemeChinese = !curLexemeChinese;
       }
     }
-    lexemes.add(text.substring(start, end + 1));
+    lexemes.add(textCleaned.substring(start, end + 1));
     isLexemeChinese.add(curLexemeChinese);
 
     return <dynamic>[lexemes, isLexemeChinese];
@@ -450,7 +458,7 @@ class Generator {
     List<int> bytes = List.empty(growable: true);
     final isSumValid = cols.fold(0, (int sum, col) => sum + col.width) == 12;
     if (!isSumValid) {
-      throw Exception('Total columns width must be equal to 12');
+      // throw Exception('Total columns width must be equal to 12');
     }
     bool isNextRow = false;
     List<PosColumn> nextRow = <PosColumn>[];
@@ -488,18 +496,19 @@ class Generator {
       } else {
         // CASE 1: containsChinese = true
         // Split text into multiple lines if it too long
+        String text = cols[i].text.replaceNonAscii().replaceNonPrintable(replaceWith: '');
         int counter = 0;
         int splitPos = 0;
-        for (int p = 0; p < cols[i].text.length; ++p) {
-          final int w = _isChinese(cols[i].text[p]) ? 2 : 1;
+        for (int p = 0; p < text.length; ++p) {
+          final int w = _isChinese(text[p]) ? 2 : 1;
           if (counter + w >= maxCharactersNb) {
             break;
           }
           counter += w;
           splitPos += 1;
         }
-        String toPrintNextRow = cols[i].text.substring(splitPos);
-        String toPrint = cols[i].text.substring(0, splitPos);
+        String toPrintNextRow = text.substring(splitPos);
+        String toPrint = text.substring(0, splitPos);
 
         if (toPrintNextRow.isNotEmpty) {
           isNextRow = true;

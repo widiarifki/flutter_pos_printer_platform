@@ -30,22 +30,22 @@ class PrinterManager {
       try {
         var conn = await bluetoothPrinterConnector.connect(model as BluetoothPrinterInput);
         return conn;
-      } catch (e) {
-        throw Exception('model must be type of BluetoothPrinterInput');
+      } catch (e, stackTrace) {
+        throw Exception('Err bluetoothPrinterConnector.connect: ${e}, $stackTrace');
       }
     } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {
       try {
         var conn = await usbPrinterConnector.connect(model as UsbPrinterInput);
         return conn;
-      } catch (e) {
-        throw Exception('model must be type of UsbPrinterInput');
+      } catch (e, stackTrace) {
+        throw Exception('Err usbPrinterConnector.connect: ${e}, $stackTrace');
       }
     } else {
       try {
         var conn = await tcpPrinterConnector.connect(model as TcpPrinterInput);
         return conn;
-      } catch (e) {
-        throw Exception('model must be type of TcpPrinterInput');
+      } catch (e, stackTrace) {
+        throw Exception('Err tcpPrinterConnector.connect: ${e}, $stackTrace');
       }
     }
   }
@@ -71,10 +71,14 @@ class PrinterManager {
   }
 
   Stream<BTStatus> get stateBluetooth => bluetoothPrinterConnector.currentStatus.cast<BTStatus>();
+
   Stream<USBStatus> get stateUSB => usbPrinterConnector.currentStatus.cast<USBStatus>();
+
   Stream<TCPStatus> get stateTCP => tcpPrinterConnector.currentStatus.cast<TCPStatus>();
 
   BTStatus get currentStatusBT => bluetoothPrinterConnector.status;
+
   USBStatus get currentStatusUSB => usbPrinterConnector.status;
+
   TCPStatus get currentStatusTCP => tcpPrinterConnector.status;
 }
