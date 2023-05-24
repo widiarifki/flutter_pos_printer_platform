@@ -261,8 +261,9 @@ class _MyAppState extends State<MyApp> {
       case PrinterType.network:
         bytes += generator.feed(2);
         bytes += generator.cut();
-        connectedTCP = await printerManager.connect(
-            type: bluetoothPrinter.typePrinter, model: TcpPrinterInput(ipAddress: bluetoothPrinter.address!));
+        connectedTCP = (await printerManager.connect(
+                type: bluetoothPrinter.typePrinter, model: TcpPrinterInput(ipAddress: bluetoothPrinter.address!)))
+            .isSuccess;
         if (!connectedTCP) print(' --- please review your connection ---');
         break;
       default:

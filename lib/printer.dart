@@ -12,11 +12,27 @@ enum USBStatus { none, connecting, connected }
 
 enum TCPStatus { none, connected }
 
+class PrinterConnectStatusResult {
+  final bool isSuccess;
+  final Object? exception;
+  final StackTrace? stackTrace;
+
+  const PrinterConnectStatusResult({
+    required this.isSuccess,
+    this.exception,
+    this.stackTrace,
+  });
+}
+
 abstract class Printer {
   Future<bool> image(Uint8List image, {int threshold = 150});
+
   Future<bool> beep();
+
   Future<bool> pulseDrawer();
+
   Future<bool> setIp(String ipAddress);
+
   Future<bool> selfTest();
 }
 
@@ -24,14 +40,17 @@ abstract class BasePrinterInput {}
 
 //
 abstract class PrinterConnector<T> {
-  Future<bool> send(List<int> bytes);
-  Future<bool> connect(T model);
+  Future<PrinterConnectStatusResult> send(List<int> bytes);
+
+  Future<PrinterConnectStatusResult> connect(T model);
+
   Future<bool> disconnect({int? delayMs});
 }
 
 abstract class GenericPrinter<T> extends Printer {
   PrinterConnector<T> connector;
   T model;
+
   GenericPrinter(this.connector, this.model) : super();
 
   List<int> encodeSetIP(String ip) {
@@ -46,6 +65,6 @@ abstract class GenericPrinter<T> extends Printer {
     if (delayMs != null) {
       await Future.delayed(Duration(milliseconds: delayMs));
     }
-    return resp;
+    return resp.isSuccess;
   }
 }

@@ -25,7 +25,7 @@ class PrinterManager {
     }
   }
 
-  Future<bool> connect({required PrinterType type, required BasePrinterInput model}) async {
+  Future<PrinterConnectStatusResult> connect({required PrinterType type, required BasePrinterInput model}) async {
     if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
       try {
         var conn = await bluetoothPrinterConnector.connect(model as BluetoothPrinterInput);
@@ -60,7 +60,7 @@ class PrinterManager {
     }
   }
 
-  Future<bool> send({required PrinterType type, required List<int> bytes}) async {
+  Future<PrinterConnectStatusResult> send({required PrinterType type, required List<int> bytes}) async {
     if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
       return await bluetoothPrinterConnector.send(bytes);
     } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {

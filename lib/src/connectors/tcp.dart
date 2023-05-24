@@ -101,26 +101,26 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   }
 
   @override
-  Future<bool> send(List<int> bytes) async {
+  Future<PrinterConnectStatusResult> send(List<int> bytes) async {
     try {
       // final _socket = await Socket.connect(_host, _port, timeout: _timeout);
       _socket?.add(Uint8List.fromList(bytes));
       await Future.delayed(Duration(seconds: 1));
       await disconnect();
-      return true;
-    } catch (e) {
+      return PrinterConnectStatusResult(isSuccess: true);
+    } catch (e, stackTrace) {
       await disconnect();
-      return false;
+      return PrinterConnectStatusResult(isSuccess: false, stackTrace: stackTrace, exception: e);
     }
   }
 
   @override
-  Future<bool> connect(TcpPrinterInput model) async {
+  Future<PrinterConnectStatusResult> connect(TcpPrinterInput model) async {
     try {
       await _socket?.flush();
       _socket?.destroy();
       _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
-      return true;
+      return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
       await _socket?.flush();
       _socket?.destroy();
@@ -137,7 +137,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       }
       status = TCPStatus.none;
       _statusStreamController.add(status);
-      return false;
+      return PrinterConnectStatusResult(isSuccess: true, exception: e, stackTrace: stackTrace);
     }
   }
 
