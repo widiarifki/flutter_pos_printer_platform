@@ -104,6 +104,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   Future<PrinterConnectStatusResult> send(List<int> bytes, [TcpPrinterInput? model]) async {
     try {
       if (model != null) {
+        await disconnect();
         _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
       }
 
