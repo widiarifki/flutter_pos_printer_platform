@@ -241,7 +241,7 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
   Future<dynamic> destroy() => iosChannel.invokeMethod('destroy');
 
   @override
-  Future<PrinterConnectStatusResult> send(List<int> bytes) async {
+  Future<PrinterConnectStatusResult> send(List<int> bytes, [BluetoothPrinterInput? model]) async {
     try {
       if (Platform.isAndroid) {
         // final connected = await _connect();

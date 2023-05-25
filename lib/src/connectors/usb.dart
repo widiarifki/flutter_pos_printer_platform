@@ -188,7 +188,7 @@ class UsbPrinterConnector implements PrinterConnector<UsbPrinterInput> {
   }
 
   @override
-  Future<PrinterConnectStatusResult> send(List<int> bytes) async {
+  Future<PrinterConnectStatusResult> send(List<int> bytes, [UsbPrinterInput? model]) async {
     if (Platform.isAndroid)
       try {
         // final connected = await _connect();

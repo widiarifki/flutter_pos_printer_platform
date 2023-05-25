@@ -40,7 +40,7 @@ abstract class BasePrinterInput {}
 
 //
 abstract class PrinterConnector<T> {
-  Future<PrinterConnectStatusResult> send(List<int> bytes);
+  Future<PrinterConnectStatusResult> send(List<int> bytes, [T? model]);
 
   Future<PrinterConnectStatusResult> connect(T model);
 

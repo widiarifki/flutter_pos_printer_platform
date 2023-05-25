@@ -60,13 +60,14 @@ class PrinterManager {
     }
   }
 
-  Future<PrinterConnectStatusResult> send({required PrinterType type, required List<int> bytes}) async {
+  Future<PrinterConnectStatusResult> send(
+      {required PrinterType type, required List<int> bytes, BasePrinterInput? model}) async {
     if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
       return await bluetoothPrinterConnector.send(bytes);
     } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {
       return await usbPrinterConnector.send(bytes);
     } else {
-      return await tcpPrinterConnector.send(bytes);
+      return await tcpPrinterConnector.send(bytes, model as TcpPrinterInput?);
     }
   }
 
