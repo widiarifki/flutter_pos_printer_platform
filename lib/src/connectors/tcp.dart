@@ -114,7 +114,8 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       _socket?.add(Uint8List.fromList(bytes));
       return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
-      return PrinterConnectStatusResult(isSuccess: false, exception: '${model?.ipAddress}:${model?.port}:${e}', stackTrace: stackTrace);
+      return PrinterConnectStatusResult(
+          isSuccess: false, exception: '${model?.ipAddress}:${model?.port}:${e}', stackTrace: stackTrace);
     }
   }
 
@@ -128,15 +129,18 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
       return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
-      // await _socket?.flush();
-      _socket?.destroy();
       if (e is SocketException) {
         debugPrint('Err printer.connect SocketException: $e\n$stackTrace');
+        await _socket?.flush();
+        _socket?.close();
+        _socket?.destroy();
       } else {
         debugPrint('Err printer.connect OtherException: $e\n$stackTrace');
+        _socket?.destroy();
       }
       status = TCPStatus.none;
-      return PrinterConnectStatusResult(isSuccess: false, exception: '${model.ipAddress}:${model.port}:${e}', stackTrace: stackTrace);
+      return PrinterConnectStatusResult(
+          isSuccess: false, exception: '${model.ipAddress}:${model.port}:${e}', stackTrace: stackTrace);
     }
   }
 
