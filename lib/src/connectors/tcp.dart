@@ -38,6 +38,8 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
 
   TcpPrinterConnector();
 
+  String? _host;
+  int? _port;
   Socket? _socket;
   TCPStatus status = TCPStatus.none;
 
@@ -104,16 +106,14 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   Future<PrinterConnectStatusResult> send(List<int> bytes, [TcpPrinterInput? model]) async {
     try {
       if (model != null) {
-        await disconnect();
-        _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
+        // await _socket?.flush();
+        // _socket?.destroy();
+        // _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
       }
 
       _socket?.add(Uint8List.fromList(bytes));
-      await Future.delayed(Duration(seconds: 1));
-      await disconnect();
       return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
-      await disconnect();
       return PrinterConnectStatusResult(isSuccess: false, stackTrace: stackTrace, exception: e);
     }
   }
@@ -121,6 +121,8 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   @override
   Future<PrinterConnectStatusResult> connect(TcpPrinterInput model) async {
     try {
+      _host = model.ipAddress;
+      _port = model.port;
       await _socket?.flush();
       _socket?.destroy();
       _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
@@ -130,17 +132,10 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       _socket?.destroy();
       if (e is SocketException) {
         debugPrint('Err printer.connect SocketException: $e\n$stackTrace');
-        await _socket?.flush();
-        _socket?.close();
-        _socket?.destroy();
       } else {
         debugPrint('Err printer.connect OtherException: $e\n$stackTrace');
-        await _socket?.flush();
-        _socket?.close();
-        _socket?.destroy();
       }
       status = TCPStatus.none;
-      _statusStreamController.add(status);
       return PrinterConnectStatusResult(isSuccess: true, exception: e, stackTrace: stackTrace);
     }
   }
@@ -160,7 +155,6 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       await _socket?.flush();
       _socket?.destroy();
       status = TCPStatus.none;
-      _statusStreamController.add(status);
       return false;
     }
   }
@@ -168,27 +162,5 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   /// Gets the current state of the TCP module
   Stream<TCPStatus> get currentStatus async* {
     yield* _statusStream.cast<TCPStatus>();
-  }
-
-  void listenSocket(Ping ping) {
-    _socket?.listen(
-      (dynamic message) {
-        debugPrint('message $message');
-      },
-      onDone: () {
-        status = TCPStatus.none;
-        debugPrint('socket closed'); //if closed you will get it here
-        _socket?.destroy();
-        ping.stop();
-        _statusStreamController.add(status);
-      },
-      onError: (error) {
-        status = TCPStatus.none;
-        debugPrint('socket error $error');
-        _socket?.destroy();
-        ping.stop();
-        _statusStreamController.add(status);
-      },
-    );
   }
 }
