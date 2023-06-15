@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:dart_ping/dart_ping.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_pos_printer_platform/src/models/printer_device.dart';
-import 'package:network_info_plus/network_info_plus.dart';
 import 'package:flutter_pos_printer_platform/discovery.dart';
 import 'package:flutter_pos_printer_platform/printer.dart';
 import 'package:ping_discover_network_forked/ping_discover_network_forked.dart';
@@ -47,16 +46,11 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   final StreamController<TCPStatus> _statusStreamController = StreamController.broadcast();
 
   static Future<List<PrinterDiscovered<TcpPrinterInfo>>> discoverPrinters(
-      {String? ipAddress, int? port, Duration? timeOut}) async {
+      {required String ipAddress, int? port, Duration? timeOut}) async {
     final List<PrinterDiscovered<TcpPrinterInfo>> result = [];
     final defaultPort = port ?? 9100;
 
-    String? deviceIp;
-    if (Platform.isAndroid || Platform.isIOS) {
-      deviceIp = await NetworkInfo().getWifiIP();
-    } else if (ipAddress != null) deviceIp = ipAddress;
-    if (deviceIp == null) return result;
-
+    String deviceIp = ipAddress;
     final String subnet = deviceIp.substring(0, deviceIp.lastIndexOf('.'));
     // final List<String> ips = List.generate(255, (index) => '$subnet.$index');
 
@@ -77,21 +71,12 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   }
 
   /// Starts a scan for network printers.
-  Stream<PrinterDevice> discovery({TcpPrinterInput? model}) async* {
+  Stream<PrinterDevice> discovery({required TcpPrinterInput? model}) async* {
     final defaultPort = model?.port ?? 9100;
 
-    String? deviceIp;
-    if (Platform.isAndroid || Platform.isIOS) {
-      deviceIp = await NetworkInfo().getWifiIP();
-    } else if (model?.ipAddress != null) {
-      deviceIp = model!.ipAddress;
-    } else {
-      return;
-      // throw Exception('No IP address provided');
-    }
+    String? deviceIp = model?.ipAddress;
 
     final String subnet = deviceIp!.substring(0, deviceIp.lastIndexOf('.'));
-    // final List<String> ips = List.generate(255, (index) => '$subnet.$index');
 
     final stream = NetworkAnalyzer.discover2(subnet, defaultPort);
 
