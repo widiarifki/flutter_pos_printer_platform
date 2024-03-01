@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.annotation.NonNull
 import androidx.core.app.ActivityCompat
 import androidx.core.app.ActivityCompat.startActivityForResult
+import com.sersoluciones.flutter_pos_printer_platform.R
 import com.sersoluciones.flutter_pos_printer_platform.bluetooth.BluetoothConnection
 import com.sersoluciones.flutter_pos_printer_platform.bluetooth.BluetoothConstants
 import com.sersoluciones.flutter_pos_printer_platform.bluetooth.BluetoothService
