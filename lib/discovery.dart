@@ -1,7 +1,5 @@
 // import 'package:flutter_star_prnt/flutter_star_prnt.dart';
 
-import 'flutter_pos_printer_platform.dart';
-
 class PrinterDiscovered<T> {
   String name;
   T detail;
