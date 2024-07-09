@@ -12,6 +12,7 @@ import android.os.Handler
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
+import com.sersoluciones.flutter_pos_printer_platform.R
 import com.sersoluciones.flutter_pos_printer_platform.adapter.USBPrinterAdapter
 import java.nio.charset.Charset
 import java.util.*
