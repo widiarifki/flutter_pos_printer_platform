@@ -5,17 +5,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_pos_printer_platform/src/models/printer_device.dart';
 import 'package:flutter_pos_printer_platform/discovery.dart';
 import 'package:flutter_pos_printer_platform/printer.dart';
-import 'package:ping_discover_network_forked/ping_discover_network_forked.dart';
+import 'package:ping_discover_network/ping_discover_network.dart';
 
 class TcpPrinterInput extends BasePrinterInput {
   final String ipAddress;
   final int port;
   final Duration timeout;
+  final Duration retryInterval;
+  final int maxRetries;
 
   TcpPrinterInput({
     required this.ipAddress,
     this.port = 9100,
     this.timeout = const Duration(seconds: 5),
+    this.retryInterval = const Duration(seconds: 1),
+    this.maxRetries = 3,
   });
 }
 
@@ -30,124 +34,210 @@ class TcpPrinterInfo {
 class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   TcpPrinterConnector._();
 
-  static TcpPrinterConnector _instance = TcpPrinterConnector._();
+  static final TcpPrinterConnector _instance = TcpPrinterConnector._();
 
   static TcpPrinterConnector get instance => _instance;
-
-  TcpPrinterConnector();
 
   String? _host;
   int? _port;
   Socket? _socket;
-  TCPStatus status = TCPStatus.none;
+  TCPStatus _status = TCPStatus.none;
 
-  Stream<TCPStatus> get _statusStream => _statusStreamController.stream;
   final StreamController<TCPStatus> _statusStreamController = StreamController.broadcast();
 
-  static Future<List<PrinterDiscovered<TcpPrinterInfo>>> discoverPrinters(
-      {required String ipAddress, int? port, Duration? timeOut}) async {
-    final List<PrinterDiscovered<TcpPrinterInfo>> result = [];
-    final defaultPort = port ?? 9100;
+  Stream<TCPStatus> get _statusStream => _statusStreamController.stream;
 
-    String deviceIp = ipAddress;
-    final String subnet = deviceIp.substring(0, deviceIp.lastIndexOf('.'));
-    // final List<String> ips = List.generate(255, (index) => '$subnet.$index');
+  TCPStatus get status => _status;
 
-    final stream = NetworkAnalyzer.discover2(
-      subnet,
-      defaultPort,
-      timeout: timeOut ?? Duration(milliseconds: 4000),
-    );
-
-    await for (var addr in stream) {
-      if (addr.exists) {
-        result.add(PrinterDiscovered<TcpPrinterInfo>(
-            name: "${addr.ip}:$defaultPort", detail: TcpPrinterInfo(address: addr.ip)));
-      }
-    }
-
-    return result;
+  set status(TCPStatus newStatus) {
+    _status = newStatus;
+    _statusStreamController.add(newStatus);
   }
 
-  /// Starts a scan for network printers.
-  Stream<PrinterDevice> discovery({required TcpPrinterInput? model}) async* {
-    final defaultPort = model?.port ?? 9100;
+  bool get isConnected => _socket != null && status == TCPStatus.connected;
 
-    String? deviceIp = model?.ipAddress;
-
-    final String subnet = deviceIp!.substring(0, deviceIp.lastIndexOf('.'));
-
-    final stream = NetworkAnalyzer.discover2(subnet, defaultPort);
-
-    await for (var data in stream.map((message) => message)) {
-      if (data.exists) {
-        yield PrinterDevice(name: "${data.ip}:$defaultPort", address: data.ip);
+  // Helper method to safely close socket
+  Future<void> _safeCloseSocket() async {
+    if (_socket != null) {
+      try {
+        await _socket!.flush();
+        await _socket!.close();
+        _socket!.destroy();
+        _socket = null;
+      } catch (e) {
+        debugPrint('Error closing socket: $e');
+        _socket?.destroy();
+        _socket = null;
       }
-    }
-  }
-
-  @override
-  Future<PrinterConnectStatusResult> send(List<int> bytes, [TcpPrinterInput? model]) async {
-    try {
-      if (model != null) {
-        // await _socket?.flush();
-        // _socket?.destroy();
-        // _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
-      }
-
-      _socket?.add(Uint8List.fromList(bytes));
-      return PrinterConnectStatusResult(isSuccess: true);
-    } catch (e, stackTrace) {
-      return PrinterConnectStatusResult(
-          isSuccess: false, exception: '${model?.ipAddress}:${model?.port}:${e}', stackTrace: stackTrace);
     }
   }
 
   @override
   Future<PrinterConnectStatusResult> connect(TcpPrinterInput model) async {
+    int retryCount = 0;
+    SocketException? lastException;
+    StackTrace? lastStackTrace;
+
+    while (retryCount < model.maxRetries) {
+      try {
+        await _safeCloseSocket();
+
+        _socket = await Socket.connect(
+          model.ipAddress,
+          model.port,
+          timeout: model.timeout,
+        );
+
+        _host = model.ipAddress;
+        _port = model.port;
+        status = TCPStatus.connected;
+
+        return PrinterConnectStatusResult(isSuccess: true);
+      } on SocketException catch (e, stackTrace) {
+        lastException = e;
+        lastStackTrace = stackTrace;
+        debugPrint('Connection attempt ${retryCount + 1} failed: ${e.message}');
+
+        if (retryCount < model.maxRetries - 1) {
+          await Future.delayed(model.retryInterval);
+        }
+        retryCount++;
+      } catch (e, stackTrace) {
+        debugPrint('Unexpected error during connect: $e');
+        status = TCPStatus.none;
+        return PrinterConnectStatusResult(
+          isSuccess: false,
+          exception: 'Unexpected error: $e',
+          stackTrace: stackTrace,
+        );
+      }
+    }
+
+    status = TCPStatus.none;
+    return PrinterConnectStatusResult(
+      isSuccess: false,
+      exception: '${model.ipAddress}:${model.port}:${lastException}',
+      stackTrace: lastStackTrace,
+    );
+  }
+
+  @override
+  Future<PrinterConnectStatusResult> send(List<int> bytes, [TcpPrinterInput? model]) async {
+    if (!isConnected) {
+      if (model != null) {
+        final connectResult = await connect(model);
+        if (!connectResult.isSuccess) {
+          return connectResult;
+        }
+      } else {
+        return PrinterConnectStatusResult(
+          isSuccess: false,
+          exception: 'Not connected and no connection details provided',
+        );
+      }
+    }
+
     try {
-      _host = model.ipAddress;
-      _port = model.port;
-      await _socket?.flush();
-      _socket?.destroy();
-      _socket = await Socket.connect(model.ipAddress, model.port, timeout: model.timeout);
+      _socket!.add(Uint8List.fromList(bytes));
+      await _socket!.flush();
       return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
-      if (e is SocketException) {
-        debugPrint('Err printer.connect SocketException: $e\n$stackTrace');
-        await _socket?.flush();
-        _socket?.close();
-        _socket?.destroy();
-      } else {
-        debugPrint('Err printer.connect OtherException: $e\n$stackTrace');
-        _socket?.destroy();
-      }
       status = TCPStatus.none;
       return PrinterConnectStatusResult(
-          isSuccess: false, exception: '${model.ipAddress}:${model.port}:${e}', stackTrace: stackTrace);
+        isSuccess: false,
+        exception: 'Send error: $e',
+        stackTrace: stackTrace,
+      );
     }
   }
 
-  /// [delayMs]: milliseconds to wait after destroying the socket
   @override
   Future<bool> disconnect({int? delayMs}) async {
     try {
-      await _socket?.flush();
-      _socket?.destroy();
+      await _safeCloseSocket();
 
       if (delayMs != null) {
-        await Future.delayed(Duration(milliseconds: delayMs), () => null);
+        await Future.delayed(Duration(milliseconds: delayMs));
       }
+
+      status = TCPStatus.none;
       return true;
     } catch (e) {
-      _socket?.destroy();
+      debugPrint('Error during disconnect: $e');
       status = TCPStatus.none;
       return false;
     }
   }
 
-  /// Gets the current state of the TCP module
+  static Future<List<PrinterDiscovered<TcpPrinterInfo>>> discoverPrinters({
+    required String ipAddress,
+    int? port,
+    Duration? timeOut,
+  }) async {
+    final List<PrinterDiscovered<TcpPrinterInfo>> result = [];
+
+    if (ipAddress.isEmpty) {
+      return result;
+    }
+
+    try {
+      final String subnet = ipAddress.substring(0, ipAddress.lastIndexOf('.'));
+      final stream = NetworkAnalyzer.discover2(
+        subnet,
+        port ?? 9100,
+        timeout: timeOut ?? const Duration(milliseconds: 4000),
+      );
+
+      await for (var addr in stream) {
+        if (addr.exists) {
+          result.add(PrinterDiscovered<TcpPrinterInfo>(
+            name: "${addr.ip}:${port ?? 9100}",
+            detail: TcpPrinterInfo(address: addr.ip),
+          ));
+        }
+      }
+    } catch (e) {
+      debugPrint('Error during printer discovery: $e');
+    }
+
+    return result;
+  }
+
+  Stream<PrinterDevice> discovery({required TcpPrinterInput? model}) async* {
+    if (model?.ipAddress == null || model!.ipAddress.isEmpty) {
+      debugPrint('Invalid IP address provided');
+      return;
+    }
+
+    try {
+      final String subnet = model.ipAddress.substring(0, model.ipAddress.lastIndexOf('.'));
+      final stream = NetworkAnalyzer.discover2(
+        subnet,
+        model.port,
+        timeout: model.timeout,
+      );
+
+      await for (var data in stream) {
+        if (data.exists) {
+          yield PrinterDevice(
+            name: "${data.ip}:${model.port}",
+            address: data.ip,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error during printer discovery: $e');
+    }
+  }
+
   Stream<TCPStatus> get currentStatus async* {
-    yield* _statusStream.cast<TCPStatus>();
+    yield status;
+    yield* _statusStream;
+  }
+
+  // Clean up resources
+  void dispose() {
+    _safeCloseSocket();
+    _statusStreamController.close();
   }
 }
