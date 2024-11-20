@@ -182,11 +182,11 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
 
     try {
       final String subnet = ipAddress.substring(0, ipAddress.lastIndexOf('.'));
-      final stream = NetworkAnalyzer.discover2(
-        subnet,
-        port ?? 9100,
+      final stream = NetworkScanner(
+        subnet: subnet,
+        port: port ?? 9100,
         timeout: timeOut ?? const Duration(milliseconds: 4000),
-      );
+      ).discover();
 
       await for (var addr in stream) {
         if (addr.exists) {
@@ -211,11 +211,11 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
 
     try {
       final String subnet = model.ipAddress.substring(0, model.ipAddress.lastIndexOf('.'));
-      final stream = NetworkAnalyzer.discover2(
-        subnet,
-        model.port,
+      final stream = NetworkScanner(
+        subnet: subnet,
+        port: model.port,
         timeout: model.timeout,
-      );
+      ).discover();
 
       await for (var data in stream) {
         if (data.exists) {
