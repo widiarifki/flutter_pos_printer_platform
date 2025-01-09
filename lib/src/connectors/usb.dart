@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart';
 import 'package:flutter_pos_printer_platform/discovery.dart';
 import 'package:flutter_pos_printer_platform/flutter_pos_printer_platform.dart';
 
@@ -204,6 +205,37 @@ class UsbPrinterConnector implements PrinterConnector<UsbPrinterInput> {
     else if (Platform.isWindows)
       try {
         Map<String, dynamic> params = {"bytes": Uint8List.fromList(bytes)};
+        return PrinterConnectStatusResult(
+          isSuccess: await flutterPrinterChannel.invokeMethod('printBytes', params) == 1 ? true : false,
+          exception: Exception('printBytes failed'),
+        );
+      } catch (e, stackTrace) {
+        await this._close();
+        return PrinterConnectStatusResult(isSuccess: false, exception: e, stackTrace: stackTrace);
+      }
+    else
+      return PrinterConnectStatusResult(isSuccess: false, exception: Exception('else platform'));
+  }
+
+  @override
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
+      {UsbPrinterInput? model, int delayBetweenMs = 50}) async {
+    final unsplitBytes = bytes.flattenedToList;
+    if (Platform.isAndroid)
+      try {
+        // final connected = await _connect();
+        // if (!connected) return false;
+        Map<String, dynamic> params = {"bytes": unsplitBytes};
+        return PrinterConnectStatusResult(
+          isSuccess: await flutterPrinterChannel.invokeMethod('printBytes', params) ?? false,
+          exception: Exception('printBytes failed'),
+        );
+      } catch (e, stackTrace) {
+        return PrinterConnectStatusResult(isSuccess: false, stackTrace: stackTrace, exception: e);
+      }
+    else if (Platform.isWindows)
+      try {
+        Map<String, dynamic> params = {"bytes": Uint8List.fromList(unsplitBytes)};
         return PrinterConnectStatusResult(
           isSuccess: await flutterPrinterChannel.invokeMethod('printBytes', params) == 1 ? true : false,
           exception: Exception('printBytes failed'),
