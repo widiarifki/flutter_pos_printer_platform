@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_pos_printer_platform/discovery.dart';
 import 'package:flutter_pos_printer_platform/flutter_pos_printer_platform.dart';
@@ -275,6 +276,31 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
         exception: e,
         stackTrace: stackTrace,
       );
+    }
+  }
+
+  @override
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
+      {BluetoothPrinterInput? model, int delayBetweenMs = 50}) async {
+    final unsplitBytes = bytes.flattenedToList;
+    try {
+      if (Platform.isAndroid) {
+        // final connected = await _connect();
+        // if (!connected) return false;
+        Map<String, dynamic> params = {"bytes": unsplitBytes};
+        return PrinterConnectStatusResult(
+            isSuccess: await flutterPrinterChannel.invokeMethod('sendDataByte', params) ?? false);
+      } else if (Platform.isIOS) {
+        Map<String, Object> args = Map();
+        args['bytes'] = unsplitBytes;
+        args['length'] = unsplitBytes.length;
+        iosChannel.invokeMethod('writeData', args);
+        return PrinterConnectStatusResult(isSuccess: true);
+      } else {
+        return PrinterConnectStatusResult(isSuccess: false, exception: Exception('else platform'));
+      }
+    } catch (e, stackTrace) {
+      return PrinterConnectStatusResult(isSuccess: false, exception: e, stackTrace: stackTrace);
     }
   }
 }

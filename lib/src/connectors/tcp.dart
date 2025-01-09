@@ -164,6 +164,39 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   }
 
   @override
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {TcpPrinterInput? model, int delayBetweenMs = 50}) async {
+    if (!isConnected) {
+      if (model != null) {
+        final connectResult = await connect(model);
+        if (!connectResult.isSuccess) {
+          return connectResult;
+        }
+      } else {
+        return PrinterConnectStatusResult(
+          isSuccess: false,
+          exception: 'Not connected and no connection details provided',
+        );
+      }
+    }
+    try {
+      for (final section in bytes) {
+        _socket!.add(Uint8List.fromList(section));
+        await _socket!.flush();
+        // print('===> Sent section bytes: ${section.length}');
+        await Future.delayed(Duration(milliseconds: delayBetweenMs));
+      }
+      return PrinterConnectStatusResult(isSuccess: true);
+    } catch (e, stackTrace) {
+      status = TCPStatus.none;
+      return PrinterConnectStatusResult(
+        isSuccess: false,
+        exception: 'Send error: $e',
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  @override
   Future<bool> disconnect({int? delayMs}) async {
     try {
       await _safeCloseSocket();
