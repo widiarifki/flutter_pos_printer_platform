@@ -45,6 +45,8 @@ abstract class PrinterConnector<T> {
   Future<PrinterConnectStatusResult> connect(T model);
 
   Future<bool> disconnect({int? delayMs});
+
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {T? model, int delayBetweenMs = 50});
 }
 
 abstract class GenericPrinter<T> extends Printer {
