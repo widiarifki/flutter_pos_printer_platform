@@ -7,6 +7,8 @@ import 'package:flutter_pos_printer_platform/discovery.dart';
 import 'package:flutter_pos_printer_platform/printer.dart';
 import 'package:ping_discover_network/ping_discover_network.dart';
 
+import '../helpers/printer_status_checker.dart';
+
 class TcpPrinterInput extends BasePrinterInput {
   final String ipAddress;
   final int port;
@@ -164,7 +166,79 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   }
 
   @override
-  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {TcpPrinterInput? model, int delayBetweenMs = 50}) async {
+  Future<PrinterConnectStatusResult> sendWithRetries(List<int> bytes, [TcpPrinterInput? model]) async {
+    if (!isConnected) {
+      if (model != null) {
+        final connectResult = await connect(model);
+        if (!connectResult.isSuccess) {
+          return connectResult;
+        }
+        await Future.delayed(Duration(milliseconds: 100));
+      } else {
+        return PrinterConnectStatusResult(
+          isSuccess: false,
+          exception: 'Not connected and no connection details provided',
+        );
+      }
+    }
+
+    int retryCount = 0;
+    const int maxRetries = 3;
+    const Duration retryDelay = Duration(milliseconds: 500);
+    SocketException? lastException;
+    StackTrace? lastStackTrace;
+
+    while (retryCount < maxRetries) {
+      try {
+        // Check printer status
+        String printerKey = '${model?.ipAddress}:9100';
+        bool printerReady = await PrinterStatusChecker.checkStatus(
+          _socket!, printerKey,
+          maxRetries: 2, // Less retries for status check within send retry loop
+          retryDelay: Duration(milliseconds: 200),
+        );
+
+        if (!printerReady) {
+          throw SocketException('Printer not ready or in error state');
+        }
+
+        // Send data
+        _socket!.add(Uint8List.fromList(bytes));
+        await _socket!.flush();
+
+        return PrinterConnectStatusResult(isSuccess: true);
+      } catch (e, stackTrace) {
+        lastException = e is SocketException ? e : SocketException(e.toString());
+        lastStackTrace = stackTrace;
+
+        debugPrint('Print attempt ${retryCount + 1} failed: $e');
+
+        retryCount++;
+        if (retryCount < maxRetries) {
+          await Future.delayed(retryDelay);
+
+          // Try to reconnect if needed
+          if (!isConnected && model != null) {
+            final reconnectResult = await connect(model);
+            if (!reconnectResult.isSuccess) {
+              continue;
+            }
+          }
+        }
+      }
+    }
+
+    status = TCPStatus.none;
+    return PrinterConnectStatusResult(
+      isSuccess: false,
+      exception: 'Send error after $maxRetries attempts: ${lastException?.message}',
+      stackTrace: lastStackTrace,
+    );
+  }
+
+  @override
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
+      {TcpPrinterInput? model, int delayBetweenMs = 50}) async {
     if (!isConnected) {
       if (model != null) {
         final connectResult = await connect(model);

@@ -42,6 +42,8 @@ abstract class BasePrinterInput {}
 abstract class PrinterConnector<T> {
   Future<PrinterConnectStatusResult> send(List<int> bytes, [T? model]);
 
+  Future<PrinterConnectStatusResult> sendWithRetries(List<int> bytes, [T? model]);
+
   Future<PrinterConnectStatusResult> connect(T model);
 
   Future<bool> disconnect({int? delayMs});

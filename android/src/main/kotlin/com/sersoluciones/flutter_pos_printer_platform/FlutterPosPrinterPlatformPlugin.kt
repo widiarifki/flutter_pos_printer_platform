@@ -249,11 +249,16 @@ class FlutterPosPrinterPlatformPlugin :
             }
 
             call.method.equals("onStartConnection") -> {
-                val address: String = call.argument("address")
-                val isBle: Boolean = call.argument("isBle")
-                val autoConnect: Boolean =
-                    if (call.hasArgument("autoConnect")) call.argument("autoConnect")!!
-                    else false
+                val address = call.argument<String>("address") ?: run {
+                    result.error("INVALID_ARGUMENT", "Address cannot be null", null)
+                    return
+                }
+                val isBle = call.argument<Boolean>("isBle") ?: run {
+                    result.error("INVALID_ARGUMENT", "isBle cannot be null", null)
+                    return
+                }
+                val autoConnect = call.argument<Boolean>("autoConnect") ?: false
+
                 if (verifyIsBluetoothIsOn()) {
                     bluetoothService?.setHandler(bluetoothHandler)
                     bluetoothService?.onStartConnection(
@@ -268,23 +273,13 @@ class FlutterPosPrinterPlatformPlugin :
                 }
             }
 
-            call.method.equals("disconnect") -> {
-                try {
-                    bluetoothService?.setHandler(bluetoothHandler)
-                    bluetoothService?.bluetoothDisconnect()
-                    result.success(true)
-                } catch (e: Exception) {
-                    result.success(false)
-                }
-            }
-
             call.method.equals("sendDataByte") -> {
                 if (verifyIsBluetoothIsOn()) {
-                    val bytes: ByteArray = call.argument("bytes")
-                    // val ints = listInt!!.toIntArray()
-                    // val bytes = ints.foldIndexed(ByteArrayx(ints.size)) { i, a, v -> a.apply {
-                    // set(i, v.toByte()) } }
-                    val res = bluetoothService?.sendDataByte(bytes)
+                    val bytes = call.argument<ByteArray>("bytes") ?: run {
+                        result.error("INVALID_ARGUMENT", "Bytes cannot be null", null)
+                        return
+                    }
+                    val res = bluetoothService?.sendDataByte(bytes) ?: false
                     result.success(res)
                 } else {
                     result.success(false)
@@ -293,7 +288,10 @@ class FlutterPosPrinterPlatformPlugin :
 
             call.method.equals("sendText") -> {
                 if (verifyIsBluetoothIsOn()) {
-                    val text: String = call.argument("text")
+                    val text = call.argument<String>("text") ?: run {
+                        result.error("INVALID_ARGUMENT", "Text cannot be null", null)
+                        return
+                    }
                     bluetoothService?.sendData(text)
                     result.success(true)
                 } else {
@@ -301,34 +299,49 @@ class FlutterPosPrinterPlatformPlugin :
                 }
             }
 
+            call.method.equals("connectPrinter") -> {
+                val vendor = call.argument<Int>("vendor") ?: run {
+                    result.error("INVALID_ARGUMENT", "Vendor cannot be null", null)
+                    return
+                }
+                val product = call.argument<Int>("product") ?: run {
+                    result.error("INVALID_ARGUMENT", "Product cannot be null", null)
+                    return
+                }
+                connectPrinter(vendor, product, result)
+            }
+
+            call.method.equals("printText") -> {
+                val text = call.argument<String>("text") ?: run {
+                    result.error("INVALID_ARGUMENT", "Text cannot be null", null)
+                    return
+                }
+                printText(text, result)
+            }
+
+            call.method.equals("printRawData") -> {
+                val raw = call.argument<String>("raw") ?: run {
+                    result.error("INVALID_ARGUMENT", "Raw data cannot be null", null)
+                    return
+                }
+                printRawData(raw, result)
+            }
+
+            call.method.equals("printBytes") -> {
+                val bytes = call.argument<ArrayList<Int>>("bytes") ?: run {
+                    result.error("INVALID_ARGUMENT", "Bytes cannot be null", null)
+                    return
+                }
+                printBytes(bytes, result)
+            }
+
             call.method.equals("getList") -> {
                 bluetoothService?.cleanHandlerBtBle()
                 getUSBDeviceList(result)
             }
 
-            call.method.equals("connectPrinter") -> {
-                val vendor: Int = call.argument("vendor")
-                val product: Int = call.argument("product")
-                connectPrinter(vendor, product, result)
-            }
-
             call.method.equals("close") -> {
                 closeConn(result)
-            }
-
-            call.method.equals("printText") -> {
-                val text: String = call.argument("text")
-                printText(text, result)
-            }
-
-            call.method.equals("printRawData") -> {
-                val raw: String = call.argument("raw")
-                printRawData(raw, result)
-            }
-
-            call.method.equals("printBytes") -> {
-                val bytes: ArrayList<Int> = call.argument("bytes")
-                printBytes(bytes, result)
             }
 
             else -> {

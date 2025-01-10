@@ -71,14 +71,29 @@ class PrinterManager {
     }
   }
 
+  Future<PrinterConnectStatusResult> sendWithRetries(
+      {required PrinterType type, required List<int> bytes, BasePrinterInput? model}) async {
+    if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
+      return await bluetoothPrinterConnector.sendWithRetries(bytes);
+    } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {
+      return await usbPrinterConnector.sendWithRetries(bytes);
+    } else {
+      return await tcpPrinterConnector.sendWithRetries(bytes, model as TcpPrinterInput?);
+    }
+  }
+
   Future<PrinterConnectStatusResult> splitSend(
-      {required PrinterType type, required List<List<int>> bytes, BasePrinterInput? model, int delayBetweenMs = 50}) async {
+      {required PrinterType type,
+      required List<List<int>> bytes,
+      BasePrinterInput? model,
+      int delayBetweenMs = 50}) async {
     if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
       return await bluetoothPrinterConnector.splitSend(bytes);
     } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {
       return await usbPrinterConnector.splitSend(bytes);
     } else {
-      return await tcpPrinterConnector.splitSend(bytes, model: model as TcpPrinterInput?, delayBetweenMs: delayBetweenMs);
+      return await tcpPrinterConnector.splitSend(bytes,
+          model: model as TcpPrinterInput?, delayBetweenMs: delayBetweenMs);
     }
   }
 

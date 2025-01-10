@@ -303,4 +303,10 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
       return PrinterConnectStatusResult(isSuccess: false, exception: e, stackTrace: stackTrace);
     }
   }
+
+  @override
+  Future<PrinterConnectStatusResult> sendWithRetries(List<int> bytes, [BluetoothPrinterInput? model]) {
+    // TODO: implement sendWithRetries
+    throw UnimplementedError();
+  }
 }
