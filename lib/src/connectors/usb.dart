@@ -223,6 +223,7 @@ class UsbPrinterConnector implements PrinterConnector<UsbPrinterInput> {
     int? fixedDelayMs,
     int? dynamicDelayBaseMs,
     double? sizeMultiplier,
+    Duration? flushTimeout,
   }) async {
     final unsplitBytes = bytes.flattenedToList;
     if (Platform.isAndroid)

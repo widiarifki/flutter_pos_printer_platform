@@ -51,6 +51,7 @@ abstract class PrinterConnector<T> {
     int? fixedDelayMs,
     int? dynamicDelayBaseMs,
     double? sizeMultiplier,
+    Duration? flushTimeout,
   });
 }
 

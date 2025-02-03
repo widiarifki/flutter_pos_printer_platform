@@ -78,6 +78,7 @@ class PrinterManager {
     int? delayBetweenMs,
     int? dynamicDelayBaseMs,
     double? sizeMultiplier,
+    Duration? flushTimeout,
   }) async {
     if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
       return await bluetoothPrinterConnector.splitSend(bytes);
@@ -90,6 +91,7 @@ class PrinterManager {
         fixedDelayMs: delayBetweenMs,
         dynamicDelayBaseMs: dynamicDelayBaseMs,
         sizeMultiplier: sizeMultiplier,
+        flushTimeout: flushTimeout,
       );
     }
   }

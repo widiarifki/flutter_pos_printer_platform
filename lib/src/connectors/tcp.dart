@@ -169,6 +169,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
     int? fixedDelayMs = 50,
     int? dynamicDelayBaseMs = 50,
     double? sizeMultiplier = 0.01,
+    Duration? flushTimeout,
   }) async {
     if (!isConnected) {
       if (model != null) {
@@ -187,8 +188,17 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
     for (final section in bytes) {
       try {
         _socket!.add(Uint8List.fromList(section));
-        await _socket!.flush();
-        // print('===> Sent section bytes: ${section.length}');
+        await _socket!.flush().timeout(
+          flushTimeout ?? const Duration(milliseconds: 1000),
+          onTimeout: () {
+            status = TCPStatus.none;
+            return PrinterConnectStatusResult(
+              isSuccess: false,
+              exception: 'Send error: Socket.flush() timed out after 10ms',
+            );
+          },
+        );
+
         int? delay;
         if (fixedDelayMs != null) {
           delay = fixedDelayMs;

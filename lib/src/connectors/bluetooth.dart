@@ -285,6 +285,7 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
     int? fixedDelayMs,
     int? dynamicDelayBaseMs,
     double? sizeMultiplier,
+    Duration? flushTimeout,
   }) async {
     final unsplitBytes = bytes.flattenedToList;
     try {
