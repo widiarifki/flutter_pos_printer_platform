@@ -280,8 +280,12 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
   }
 
   @override
-  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
-      {BluetoothPrinterInput? model, int delayBetweenMs = 50}) async {
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {
+    BluetoothPrinterInput? model,
+    int? fixedDelayMs,
+    int? dynamicDelayBaseMs,
+    double? sizeMultiplier,
+  }) async {
     final unsplitBytes = bytes.flattenedToList;
     try {
       if (Platform.isAndroid) {

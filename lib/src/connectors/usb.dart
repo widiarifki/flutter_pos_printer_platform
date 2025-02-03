@@ -218,8 +218,12 @@ class UsbPrinterConnector implements PrinterConnector<UsbPrinterInput> {
   }
 
   @override
-  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
-      {UsbPrinterInput? model, int delayBetweenMs = 50}) async {
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {
+    UsbPrinterInput? model,
+    int? fixedDelayMs,
+    int? dynamicDelayBaseMs,
+    double? sizeMultiplier,
+  }) async {
     final unsplitBytes = bytes.flattenedToList;
     if (Platform.isAndroid)
       try {

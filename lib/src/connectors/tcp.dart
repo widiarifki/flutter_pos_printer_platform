@@ -164,7 +164,12 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   }
 
   @override
-  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {TcpPrinterInput? model, int delayBetweenMs = 50}) async {
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {
+    TcpPrinterInput? model,
+    int? fixedDelayMs = 50,
+    int? dynamicDelayBaseMs = 50,
+    double? sizeMultiplier = 0.01,
+  }) async {
     if (!isConnected) {
       if (model != null) {
         final connectResult = await connect(model);
@@ -178,22 +183,33 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         );
       }
     }
-    try {
-      for (final section in bytes) {
+
+    for (final section in bytes) {
+      try {
         _socket!.add(Uint8List.fromList(section));
         await _socket!.flush();
         // print('===> Sent section bytes: ${section.length}');
-        await Future.delayed(Duration(milliseconds: delayBetweenMs));
+        int? delay;
+        if (fixedDelayMs != null) {
+          delay = fixedDelayMs;
+        } else if (dynamicDelayBaseMs != null && sizeMultiplier != null) {
+          delay = dynamicDelayBaseMs + (section.length * sizeMultiplier).toInt();
+        }
+        if (delay != null) {
+          // print('Sending ${section.length} bytes with delay $delay ms');
+          await Future.delayed(Duration(milliseconds: delay));
+        }
+      } catch (e, stackTrace) {
+        status = TCPStatus.none;
+        return PrinterConnectStatusResult(
+          isSuccess: false,
+          exception: 'Send error: $e',
+          stackTrace: stackTrace,
+        );
       }
-      return PrinterConnectStatusResult(isSuccess: true);
-    } catch (e, stackTrace) {
-      status = TCPStatus.none;
-      return PrinterConnectStatusResult(
-        isSuccess: false,
-        exception: 'Send error: $e',
-        stackTrace: stackTrace,
-      );
     }
+
+    return PrinterConnectStatusResult(isSuccess: true);
   }
 
   @override

@@ -71,14 +71,26 @@ class PrinterManager {
     }
   }
 
-  Future<PrinterConnectStatusResult> splitSend(
-      {required PrinterType type, required List<List<int>> bytes, BasePrinterInput? model, int delayBetweenMs = 50}) async {
+  Future<PrinterConnectStatusResult> splitSend({
+    required PrinterType type,
+    required List<List<int>> bytes,
+    BasePrinterInput? model,
+    int? delayBetweenMs,
+    int? dynamicDelayBaseMs,
+    double? sizeMultiplier,
+  }) async {
     if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
       return await bluetoothPrinterConnector.splitSend(bytes);
     } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {
       return await usbPrinterConnector.splitSend(bytes);
     } else {
-      return await tcpPrinterConnector.splitSend(bytes, model: model as TcpPrinterInput?, delayBetweenMs: delayBetweenMs);
+      return await tcpPrinterConnector.splitSend(
+        bytes,
+        model: model as TcpPrinterInput?,
+        fixedDelayMs: delayBetweenMs,
+        dynamicDelayBaseMs: dynamicDelayBaseMs,
+        sizeMultiplier: sizeMultiplier,
+      );
     }
   }
 
