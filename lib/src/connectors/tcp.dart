@@ -140,20 +140,8 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
     }
 
     try {
-      // Split bytes into smaller chunks (e.g., 1KB chunks)
-      const int chunkSize = 1024;
-      // print('===> Total Bytes: ${bytes.length}');
-      for (int i = 0; i < bytes.length; i += chunkSize) {
-        int end = (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
-        Uint8List chunk = Uint8List.fromList(bytes.sublist(i, end));
-
-        _socket!.add(chunk);
-        await _socket!.flush();
-        // print('===> Sent ${bytes.sublist(i, end).length}');
-
-        // Optional: Small delay between chunks
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
+      _socket!.add(Uint8List.fromList(bytes));
+      await _socket!.flush();
       return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
       status = TCPStatus.none;
