@@ -240,19 +240,60 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         );
       }
     }
+
     try {
-      for (final section in bytes) {
-        _socket!.add(Uint8List.fromList(section));
-        await _socket!.flush();
-        // print('===> Sent section bytes: ${section.length}');
-        await Future.delayed(Duration(milliseconds: delayBetweenMs));
+      if (_socket == null) {
+        throw SocketException('Socket is null');
       }
+
+      int totalSize = bytes.fold(0, (sum, section) => sum + section.length);
+      debugPrint('Starting split send with ${bytes.length} sections, total size: $totalSize bytes');
+
+      // Track accumulated data size to determine when to flush
+      int accumulatedSize = 0;
+      final int flushThreshold = 8 * 1024; // 8KB threshold for flushing
+
+      for (int i = 0; i < bytes.length; i++) {
+        final section = bytes[i];
+        if (section.isEmpty) continue;
+
+        // Add data to socket (synchronous operation)
+        _socket!.add(Uint8List.fromList(section));
+        accumulatedSize += section.length;
+
+        // Flush only when:
+        // 1. We've accumulated significant data
+        // 2. Or it's the last section
+        // 3. Or we're about to wait anyway
+        bool shouldFlush = accumulatedSize >= flushThreshold || i == bytes.length - 1 || delayBetweenMs > 0;
+
+        if (shouldFlush) {
+          try {
+            await _socket!.flush().timeout(Duration(seconds: 5), onTimeout: () {
+              debugPrint('Flush timeout after $accumulatedSize bytes');
+              throw TimeoutException('Flush operation timed out');
+            });
+            accumulatedSize = 0; // Reset accumulated size after flush
+          } catch (e) {
+            debugPrint('Flush error: $e');
+            rethrow;
+          }
+        }
+
+        if (delayBetweenMs > 0 && i < bytes.length - 1) {
+          await Future.delayed(Duration(milliseconds: delayBetweenMs));
+        }
+      }
+
+      debugPrint('Successfully sent all sections');
       return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
+      debugPrint('Split send failed: $e');
       status = TCPStatus.none;
+      await _safeCloseSocket();
       return PrinterConnectStatusResult(
         isSuccess: false,
-        exception: 'Send error: $e',
+        exception: 'Split send error: $e',
         stackTrace: stackTrace,
       );
     }
