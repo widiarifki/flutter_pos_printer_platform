@@ -249,9 +249,16 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       int totalSize = bytes.fold(0, (sum, section) => sum + section.length);
       debugPrint('Starting split send with ${bytes.length} sections, total size: $totalSize bytes');
 
-      // Track accumulated data size to determine when to flush
+      // Adaptive buffer management
       int accumulatedSize = 0;
-      final int flushThreshold = 8 * 1024; // 8KB threshold for flushing
+      // Start with a conservative threshold and adjust based on printer response
+      int flushThreshold = 4 * 1024; // 4KB initial threshold
+      int maxFlushThreshold = 16 * 1024; // 16KB max threshold
+      int successfulFlushes = 0;
+
+      // Set socket options to prevent buffer bloat
+      // This helps detect printer issues faster
+      _socket!.setOption(SocketOption.tcpNoDelay, true);
 
       for (int i = 0; i < bytes.length; i++) {
         final section = bytes[i];
@@ -261,21 +268,52 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         _socket!.add(Uint8List.fromList(section));
         accumulatedSize += section.length;
 
-        // Flush only when:
-        // 1. We've accumulated significant data
-        // 2. Or it's the last section
-        // 3. Or we're about to wait anyway
-        bool shouldFlush = accumulatedSize >= flushThreshold || i == bytes.length - 1 || delayBetweenMs > 0;
+        // Progressive flush strategy:
+        // 1. Always flush at strategic points
+        // 2. Use adaptive thresholds based on printer performance
+        bool shouldFlush = accumulatedSize >= flushThreshold ||
+            i == bytes.length - 1 ||
+            delayBetweenMs > 0 ||
+            // Force more frequent flushes at the beginning
+            (i < 5 && accumulatedSize > 1024);
 
         if (shouldFlush) {
           try {
-            await _socket!.flush().timeout(Duration(seconds: 5), onTimeout: () {
-              debugPrint('Flush timeout after $accumulatedSize bytes');
-              throw TimeoutException('Flush operation timed out');
+            // Use progressive timeouts - short at first, then longer if needed
+            int timeoutSeconds = successfulFlushes < 2 ? 3 : 5;
+
+            await _socket!.flush().timeout(Duration(seconds: timeoutSeconds), onTimeout: () {
+              debugPrint('Flush timeout after $accumulatedSize bytes (threshold: $flushThreshold)');
+
+              // Reduce threshold on timeout to be more conservative next time
+              flushThreshold = (flushThreshold / 2).round();
+              if (flushThreshold < 1024) flushThreshold = 1024; // Minimum 1KB
+
+              // Mark the connection as failed on timeout
+              status = TCPStatus.none;
+              throw TimeoutException('Flush operation timed out - printer may be busy or buffer full');
             });
-            accumulatedSize = 0; // Reset accumulated size after flush
+
+            // Successfully flushed data - we can adjust our strategy
+            successfulFlushes++;
+            accumulatedSize = 0;
+
+            // Gradually increase threshold if things are going well
+            if (successfulFlushes > 3 && flushThreshold < maxFlushThreshold) {
+              flushThreshold = (flushThreshold * 1.5).round();
+              if (flushThreshold > maxFlushThreshold) flushThreshold = maxFlushThreshold;
+            }
+
+            // Add a micro-delay after flush to give printer time to process
+            // Only if we're not already adding a larger delay
+            if (delayBetweenMs < 10) {
+              await Future.delayed(Duration(milliseconds: 5));
+            }
           } catch (e) {
             debugPrint('Flush error: $e');
+            // Ensure socket is properly closed on any flush error
+            await _safeCloseSocket();
+            status = TCPStatus.none;
             rethrow;
           }
         }
