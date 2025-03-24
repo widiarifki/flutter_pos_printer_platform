@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_pos_printer_platform/flutter_pos_printer_platform.dart';
 
 enum PrinterType { bluetooth, usb, network }
@@ -14,6 +17,119 @@ class PrinterManager {
   static PrinterManager _instance = PrinterManager._();
 
   static PrinterManager get instance => _instance;
+
+  static Function(String message, {String? level, dynamic error, StackTrace? stackTrace})? logCallback;
+
+  void _log(String message, {String level = 'info', dynamic error, StackTrace? stackTrace}) {
+    if (level == 'error') {
+      print('ERROR: $message');
+      if (error != null) print('Error details: $error');
+    } else {
+      print(message);
+    }
+
+    // Send to callback if available
+    if (logCallback != null) {
+      logCallback!(message, level: level, error: error, stackTrace: stackTrace);
+    }
+  }
+
+
+  Future<bool> checkPrinterStatus({required PrinterType type, required BasePrinterInput model}) async {
+    if (type == PrinterType.network) {
+      try {
+        final tcpModel = model as TcpPrinterInput;
+        Socket socket = await Socket.connect(tcpModel.ipAddress, tcpModel.port, timeout: Duration(seconds: 2));
+
+        // Send a status request command (common for ESC/POS printers)
+        List<List<int>> statusCommands = [
+          [0x10, 0x04, 0x01], // DLE EOT n - Epson
+          [0x1D, 0x72, 0x01], // GS r n - Generic
+        ];
+
+        for (final cmd in statusCommands) {
+          socket.add(Uint8List.fromList(cmd));
+          await socket.flush();
+        }
+
+        // Create a completer for async response handling
+        Completer<bool> completer = Completer<bool>();
+
+        // Set a timeout
+        Timer(Duration(seconds: 1), () {
+          if (!completer.isCompleted) {
+            completer.complete(false);
+          }
+        });
+
+        // Listen for response
+        socket.listen(
+          (data) {
+            if (!completer.isCompleted && data.isNotEmpty) {
+              completer.complete(true);
+            }
+          },
+          onError: (e) {
+            if (!completer.isCompleted) {
+              completer.complete(false);
+            }
+          },
+          onDone: () {
+            if (!completer.isCompleted) {
+              completer.complete(false);
+            }
+          },
+        );
+
+        bool result = await completer.future;
+        await socket.close();
+        return result;
+      } catch (e) {
+        _log('Error checking printer status: $e');
+        return false;
+      }
+    }
+
+    // For non-network printers
+    return true;
+  }
+
+  Future<bool> testPrint({required PrinterType type, required BasePrinterInput model}) async {
+    try {
+      // Create a simple test page
+      List<int> testData = [
+        // Initialize printer
+        0x1B, 0x40,
+        // Text formatting - normal
+        0x1B, 0x21, 0x00,
+        // Test message
+        ...utf8.encode("Printer Test\n${DateTime.now()}\n\n"),
+        // Line feeds & cut
+        0x0A, 0x0A, 0x0A,
+        0x1D, 0x56, 0x41, 0x03 // Cut paper
+      ];
+
+      // Connect and send
+      final connectResult = await connect(type: type, model: model);
+      if (!connectResult.isSuccess) {
+        return false;
+      }
+
+      // Send test data
+      final sendResult = await send(type: type, bytes: testData, model: model);
+
+      // Wait for printing to complete
+      await Future.delayed(Duration(milliseconds: 500));
+
+      // Disconnect
+      await disconnect(type: type, delayMs: 200);
+
+      return sendResult.isSuccess;
+    } catch (e) {
+      _log('Test print failed: $e');
+      return false;
+    }
+  }
 
   Stream<PrinterDevice> discovery({required PrinterType type, bool isBle = false, TcpPrinterInput? model}) {
     if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {

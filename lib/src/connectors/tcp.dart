@@ -58,19 +58,22 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
 
   bool get isConnected => _socket != null && status == TCPStatus.connected;
 
-  // Helper method to safely close socket
-  Future<void> _safeCloseSocket() async {
-    if (_socket != null) {
-      try {
-        await _socket!.flush();
-        await _socket!.close();
-        _socket!.destroy();
-        _socket = null;
-      } catch (e) {
-        debugPrint('Error closing socket: $e');
-        _socket?.destroy();
-        _socket = null;
-      }
+  // to track printers that are having issues
+  final Map<String, DateTime> _problematicPrinters = {};
+
+  static Function(String message, {String? level, dynamic error, StackTrace? stackTrace})? logCallback;
+
+  static void _log(String message, {String level = 'info', dynamic error, StackTrace? stackTrace}) {
+    if (level == 'error') {
+      debugPrint('ERROR: $message');
+      if (error != null) debugPrint('Error details: $error');
+    } else {
+      debugPrint(message);
+    }
+
+    // Send to callback if available
+    if (logCallback != null) {
+      logCallback!(message, level: level, error: error, stackTrace: stackTrace);
     }
   }
 
@@ -80,10 +83,21 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
     SocketException? lastException;
     StackTrace? lastStackTrace;
 
+    // Clear any existing socket first
+    await _safeCloseSocket();
+
+    // Add check for recent failures to avoid rapid reconnection attempts
+    String printerKey = '${model.ipAddress}:${model.port}';
+    if (_problematicPrinters.containsKey(printerKey)) {
+      DateTime lastFailure = _problematicPrinters[printerKey]!;
+      if (DateTime.now().difference(lastFailure) < Duration(seconds: 10)) {
+        // Wait longer for problematic printers to recover
+        await Future.delayed(Duration(seconds: 1));
+      }
+    }
+
     while (retryCount < model.maxRetries) {
       try {
-        await _safeCloseSocket();
-
         _socket = await Socket.connect(
           model.ipAddress,
           model.port,
@@ -94,18 +108,29 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         _port = model.port;
         status = TCPStatus.connected;
 
+        // On successful connection, remove from problematic printers
+        _problematicPrinters.remove(printerKey);
+
+        // Add a small delay after connecting to ensure printer is ready
+        await Future.delayed(Duration(milliseconds: 100));
+
         return PrinterConnectStatusResult(isSuccess: true);
       } on SocketException catch (e, stackTrace) {
         lastException = e;
         lastStackTrace = stackTrace;
-        debugPrint('Connection attempt ${retryCount + 1} failed: ${e.message}');
+        _log('Connection attempt ${retryCount + 1} failed: ${e.message}');
+
+        // Add to problematic printers list
+        _problematicPrinters[printerKey] = DateTime.now();
 
         if (retryCount < model.maxRetries - 1) {
-          await Future.delayed(model.retryInterval);
+          // Increasing delays between retries (1s, 2s, 4s)
+          await Future.delayed(Duration(milliseconds: 1000 * (1 << retryCount)));
         }
         retryCount++;
       } catch (e, stackTrace) {
-        debugPrint('Unexpected error during connect: $e');
+        _log('Unexpected error during connect: $e');
+        _problematicPrinters[printerKey] = DateTime.now();
         status = TCPStatus.none;
         return PrinterConnectStatusResult(
           isSuccess: false,
@@ -118,7 +143,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
     status = TCPStatus.none;
     return PrinterConnectStatusResult(
       isSuccess: false,
-      exception: '${model.ipAddress}:${model.port}:${lastException}',
+      exception: '${model.ipAddress}:${model.port}: ${lastException}',
       stackTrace: lastStackTrace,
     );
   }
@@ -199,7 +224,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         lastException = e is SocketException ? e : SocketException(e.toString());
         lastStackTrace = stackTrace;
 
-        debugPrint('Print attempt ${retryCount + 1} failed: $e');
+        _log('Print attempt ${retryCount + 1} failed: $e');
 
         retryCount++;
         if (retryCount < maxRetries) {
@@ -227,6 +252,11 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   @override
   Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
       {TcpPrinterInput? model, int delayBetweenMs = 50}) async {
+    _log(
+        'splitSend ${bytes.length} sections to print, total size: ${bytes.fold(0, (sum, item) => sum + item.length)} bytes',
+        level: 'warn');
+
+    // Ensure properly connected
     if (!isConnected) {
       if (model != null) {
         final connectResult = await connect(model);
@@ -246,87 +276,78 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         throw SocketException('Socket is null');
       }
 
-      int totalSize = bytes.fold(0, (sum, section) => sum + section.length);
-      debugPrint('Starting split send with ${bytes.length} sections, total size: $totalSize bytes');
-
-      // Adaptive buffer management
-      int accumulatedSize = 0;
-      // Start with a conservative threshold and adjust based on printer response
-      int flushThreshold = 4 * 1024; // 4KB initial threshold
-      int maxFlushThreshold = 16 * 1024; // 16KB max threshold
-      int successfulFlushes = 0;
-
-      // Set socket options to prevent buffer bloat
-      // This helps detect printer issues faster
+      // Set important socket options for printer communication
       _socket!.setOption(SocketOption.tcpNoDelay, true);
 
+      // Calculate adaptive delays based on data size
+      int totalSize = bytes.fold(0, (sum, section) => sum + section.length);
+      int sectionCount = bytes.length;
+
+      // Calculate optimal delay between chunks (larger sections need more time)
+      int adaptiveDelay = delayBetweenMs;
+      if (sectionCount > 10) {
+        adaptiveDelay = delayBetweenMs + 30;
+      } else if (totalSize > 50000) {
+        adaptiveDelay = delayBetweenMs + 20;
+      }
+
+      _log('Starting split send with ${bytes.length} sections, total size: $totalSize bytes, delay: $adaptiveDelay ms');
+
+      // More conservative flushing strategy
       for (int i = 0; i < bytes.length; i++) {
         final section = bytes[i];
         if (section.isEmpty) continue;
 
-        // Add data to socket (synchronous operation)
-        _socket!.add(Uint8List.fromList(section));
-        accumulatedSize += section.length;
+        // Send data in smaller chunks if section is large
+        if (section.length > 8192) {
+          // Break large sections into chunks of 4KB
+          final chunks = _splitIntoChunks(section, 4096);
+          for (final chunk in chunks) {
+            _socket!.add(Uint8List.fromList(chunk));
+            _log('Sent print chunk ${i + 1}/${bytes.length}, chunk size: ${bytes[i].length} bytes', level: 'info');
 
-        // Progressive flush strategy:
-        // 1. Always flush at strategic points
-        // 2. Use adaptive thresholds based on printer performance
-        bool shouldFlush = accumulatedSize >= flushThreshold ||
-            i == bytes.length - 1 ||
-            delayBetweenMs > 0 ||
-            // Force more frequent flushes at the beginning
-            (i < 5 && accumulatedSize > 1024);
-
-        if (shouldFlush) {
-          try {
-            // Use progressive timeouts - short at first, then longer if needed
-            int timeoutSeconds = successfulFlushes < 2 ? 3 : 5;
-
-            await _socket!.flush().timeout(Duration(seconds: timeoutSeconds), onTimeout: () {
-              debugPrint('Flush timeout after $accumulatedSize bytes (threshold: $flushThreshold)');
-
-              // Reduce threshold on timeout to be more conservative next time
-              flushThreshold = (flushThreshold / 2).round();
-              if (flushThreshold < 1024) flushThreshold = 1024; // Minimum 1KB
-
-              // Mark the connection as failed on timeout
-              status = TCPStatus.none;
-              throw TimeoutException('Flush operation timed out - printer may be busy or buffer full');
+            await _socket!.flush().timeout(Duration(seconds: 5), onTimeout: () {
+              throw TimeoutException('Flush operation timed out - printer may be busy');
             });
-
-            // Successfully flushed data - we can adjust our strategy
-            successfulFlushes++;
-            accumulatedSize = 0;
-
-            // Gradually increase threshold if things are going well
-            if (successfulFlushes > 3 && flushThreshold < maxFlushThreshold) {
-              flushThreshold = (flushThreshold * 1.5).round();
-              if (flushThreshold > maxFlushThreshold) flushThreshold = maxFlushThreshold;
-            }
-
-            // Add a micro-delay after flush to give printer time to process
-            // Only if we're not already adding a larger delay
-            if (delayBetweenMs < 10) {
-              await Future.delayed(Duration(milliseconds: 5));
-            }
-          } catch (e) {
-            debugPrint('Flush error: $e');
-            // Ensure socket is properly closed on any flush error
-            await _safeCloseSocket();
-            status = TCPStatus.none;
-            rethrow;
+            await Future.delayed(Duration(milliseconds: 20));
           }
+        } else {
+          // Small enough section to send at once
+          _socket!.add(Uint8List.fromList(section));
+          _log('Sent small section print ${i + 1}/${bytes.length}, section size: ${bytes[i].length} bytes',
+              level: 'info');
+
+          // Flush more frequently: always flush after each section
+          await _socket!.flush().timeout(Duration(seconds: 3), onTimeout: () {
+            throw TimeoutException('Flush operation timed out - printer may be busy');
+          });
         }
 
-        if (delayBetweenMs > 0 && i < bytes.length - 1) {
-          await Future.delayed(Duration(milliseconds: delayBetweenMs));
+        // Add delay between sections
+        if (i < bytes.length - 1) {
+          // Use adaptive delay based on section size
+          int currentDelay = adaptiveDelay;
+          if (section.length > 4096) {
+            currentDelay += 20; // Additional delay for larger sections
+          }
+          await Future.delayed(Duration(milliseconds: currentDelay));
         }
       }
 
-      debugPrint('Successfully sent all sections');
+      // Give printer time to process before returning
+      await Future.delayed(Duration(milliseconds: 200));
+
+      _log('Successfully sent all ${bytes.length} print sections', level: 'warn');
       return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
-      debugPrint('Split send failed: $e');
+      _log('Failed to splitSend print job: $e', level: 'error', error: stackTrace);
+
+      // Record printer issues
+      if (model != null) {
+        String printerKey = '${model.ipAddress}:${model.port}';
+        _problematicPrinters[printerKey] = DateTime.now();
+      }
+
       status = TCPStatus.none;
       await _safeCloseSocket();
       return PrinterConnectStatusResult(
@@ -337,19 +358,52 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
     }
   }
 
+  // Helper to split large chunks
+  List<List<int>> _splitIntoChunks(List<int> source, int chunkSize) {
+    List<List<int>> result = [];
+    for (var i = 0; i < source.length; i += chunkSize) {
+      var end = (i + chunkSize < source.length) ? i + chunkSize : source.length;
+      result.add(source.sublist(i, end));
+    }
+    return result;
+  }
+
+  // Improve the safe close method
+  Future<void> _safeCloseSocket() async {
+    if (_socket != null) {
+      try {
+        // Wait for any pending writes to complete
+        await _socket!.flush().timeout(Duration(seconds: 1), onTimeout: () => null);
+
+        // Close normally
+        await _socket!.close().timeout(Duration(seconds: 1), onTimeout: () => null);
+
+        // Destroy the socket
+        _socket!.destroy();
+        _socket = null;
+      } catch (e) {
+        _log('Error closing socket: $e');
+
+        // Destroy in case of error
+        _socket?.destroy();
+        _socket = null;
+      }
+    }
+  }
+
   @override
   Future<bool> disconnect({int? delayMs}) async {
     try {
-      await _safeCloseSocket();
-
-      if (delayMs != null) {
+      // Wait before closing to allow queued commands to complete
+      if (delayMs != null && delayMs > 0) {
         await Future.delayed(Duration(milliseconds: delayMs));
       }
 
+      await _safeCloseSocket();
       status = TCPStatus.none;
       return true;
     } catch (e) {
-      debugPrint('Error during disconnect: $e');
+      _log('Error during disconnect: $e');
       status = TCPStatus.none;
       return false;
     }
@@ -383,7 +437,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         }
       }
     } catch (e) {
-      debugPrint('Error during printer discovery: $e');
+      _log('Error during printer discovery: $e');
     }
 
     return result;
@@ -391,7 +445,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
 
   Stream<PrinterDevice> discovery({required TcpPrinterInput? model}) async* {
     if (model?.ipAddress == null || model!.ipAddress.isEmpty) {
-      debugPrint('Invalid IP address provided');
+      _log('Invalid IP address provided');
       return;
     }
 
@@ -412,7 +466,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         }
       }
     } catch (e) {
-      debugPrint('Error during printer discovery: $e');
+      _log('Error during printer discovery: $e');
     }
   }
 
