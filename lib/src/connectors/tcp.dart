@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_pos_printer_platform/src/models/printer_device.dart';
@@ -44,6 +45,8 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
   int? _port;
   Socket? _socket;
   TCPStatus _status = TCPStatus.none;
+  final Map<String, DateTime> _lastConnectionAttempts = {};
+  final int _connectionCooldownMs = 2000; // 2 seconds cooldown between connection attempts
 
   final StreamController<TCPStatus> _statusStreamController = StreamController.broadcast();
 
@@ -79,22 +82,29 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
 
   @override
   Future<PrinterConnectStatusResult> connect(TcpPrinterInput model) async {
-    int retryCount = 0;
-    SocketException? lastException;
-    StackTrace? lastStackTrace;
-
     // Clear any existing socket first
     await _safeCloseSocket();
 
-    // Add check for recent failures to avoid rapid reconnection attempts
     String printerKey = '${model.ipAddress}:${model.port}';
-    if (_problematicPrinters.containsKey(printerKey)) {
-      DateTime lastFailure = _problematicPrinters[printerKey]!;
-      if (DateTime.now().difference(lastFailure) < Duration(seconds: 10)) {
-        // Wait longer for problematic printers to recover
-        await Future.delayed(Duration(seconds: 1));
+    // Check if recently had a connection error and need to cool down
+    if (_lastConnectionAttempts.containsKey(printerKey)) {
+      DateTime lastAttempt = _lastConnectionAttempts[printerKey]!;
+      Duration timeSince = DateTime.now().difference(lastAttempt);
+
+      if (timeSince.inMilliseconds < _connectionCooldownMs) {
+        // Force a delay to avoid overwhelming the printer
+        int waitTime = _connectionCooldownMs - timeSince.inMilliseconds;
+        _log('Waiting ${waitTime}ms before reconnecting to $printerKey after previous error', level: 'info');
+        await Future.delayed(Duration(milliseconds: waitTime));
       }
     }
+
+    // Always ensure socket is closed before creating a new one
+    await _safeCloseSocket();
+
+    int retryCount = 0;
+    SocketException? lastException;
+    StackTrace? lastStackTrace;
 
     while (retryCount < model.maxRetries) {
       try {
@@ -108,35 +118,29 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         _port = model.port;
         status = TCPStatus.connected;
 
-        // On successful connection, remove from problematic printers
-        _problematicPrinters.remove(printerKey);
+        // Success - remove from tracking
+        _lastConnectionAttempts.remove(printerKey);
 
         // Add a small delay after connecting to ensure printer is ready
         await Future.delayed(Duration(milliseconds: 100));
 
         return PrinterConnectStatusResult(isSuccess: true);
-      } on SocketException catch (e, stackTrace) {
-        lastException = e;
+      } catch (e, stackTrace) {
+        lastException = e is SocketException ? e : SocketException(e.toString());
         lastStackTrace = stackTrace;
-        _log('Connection attempt ${retryCount + 1} failed: ${e.message}');
 
-        // Add to problematic printers list
-        _problematicPrinters[printerKey] = DateTime.now();
+        // Track this failed attempt
+        _lastConnectionAttempts[printerKey] = DateTime.now();
+
+        _log('Connection attempt ${retryCount + 1} failed: $e', level: 'error', error: e, stackTrace: stackTrace);
 
         if (retryCount < model.maxRetries - 1) {
-          // Increasing delays between retries (1s, 2s, 4s)
-          await Future.delayed(Duration(milliseconds: 1000 * (1 << retryCount)));
+          // Add some jitter to retry delays to avoid connection storms
+          int jitter = (Random().nextInt(200) - 100); // -100ms to +100ms
+          int delay = (1000 * (1 << retryCount) + jitter).clamp(500, 5000);
+          await Future.delayed(Duration(milliseconds: delay));
         }
         retryCount++;
-      } catch (e, stackTrace) {
-        _log('Unexpected error during connect: $e');
-        _problematicPrinters[printerKey] = DateTime.now();
-        status = TCPStatus.none;
-        return PrinterConnectStatusResult(
-          isSuccess: false,
-          exception: 'Unexpected error: $e',
-          stackTrace: stackTrace,
-        );
       }
     }
 
@@ -368,24 +372,42 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
     return result;
   }
 
-  // Improve the safe close method
   Future<void> _safeCloseSocket() async {
     if (_socket != null) {
       try {
-        // Wait for any pending writes to complete
-        await _socket!.flush().timeout(Duration(seconds: 1), onTimeout: () => null);
+        // Set a shorter timeout for closing operations
+        bool socketClosed = false;
 
-        // Close normally
-        await _socket!.close().timeout(Duration(seconds: 1), onTimeout: () => null);
+        // Try the gentle approach first
+        try {
+          await _socket!.flush().timeout(Duration(milliseconds: 500), onTimeout: () {
+            _log('Socket flush timed out, proceeding to close', level: 'warn');
+            return null;
+          });
 
-        // Destroy the socket
+          await _socket!.close().timeout(Duration(milliseconds: 500), onTimeout: () {
+            _log('Socket close timed out, will destroy socket', level: 'warn');
+            return null;
+          });
+
+          socketClosed = true;
+        } catch (e) {
+          _log('Error during socket close: $e', level: 'error', error: e);
+        }
+
+        // Always destroy the socket even if close fails
         _socket!.destroy();
         _socket = null;
-      } catch (e) {
-        _log('Error closing socket: $e');
 
-        // Destroy in case of error
-        _socket?.destroy();
+        if (socketClosed) {
+          _log('Socket closed successfully', level: 'debug');
+        } else {
+          _log('Socket was destroyed after close failure', level: 'warn');
+        }
+      } catch (e) {
+        _log('Error during socket cleanup: $e', level: 'error', error: e);
+
+        // Last resort - null out the socket
         _socket = null;
       }
     }
@@ -403,7 +425,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       status = TCPStatus.none;
       return true;
     } catch (e) {
-      _log('Error during disconnect: $e');
+      _log('Error during disconnect: $e', level: 'error', error: e);
       status = TCPStatus.none;
       return false;
     }
