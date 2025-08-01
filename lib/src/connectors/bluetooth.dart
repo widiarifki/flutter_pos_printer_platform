@@ -250,7 +250,8 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
       if (Platform.isAndroid) {
         // final connected = await _connect();
         // if (!connected) return false;
-        Map<String, dynamic> params = {"bytes": bytes};
+        Uint8List uint8Bytes = Uint8List.fromList(bytes);
+        Map<String, dynamic> params = {"bytes": uint8Bytes};
         return PrinterConnectStatusResult(
             isSuccess: await flutterPrinterChannel.invokeMethod('sendDataByte', params) ?? false);
       } else if (Platform.isIOS) {
