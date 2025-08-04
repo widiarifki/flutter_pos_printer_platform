@@ -242,12 +242,16 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
   Future<dynamic> destroy() => iosChannel.invokeMethod('destroy');
 
   @override
-  Future<PrinterConnectStatusResult> send(List<int> bytes, [BluetoothPrinterInput? model]) async {
+  Future<PrinterConnectStatusResult> send(List<int> bytes, {
+    BluetoothPrinterInput? model,
+    bool useDedicatedSocket = false
+  }) async {
     try {
       if (Platform.isAndroid) {
         // final connected = await _connect();
         // if (!connected) return false;
-        Map<String, dynamic> params = {"bytes": bytes};
+        Uint8List uint8Bytes = Uint8List.fromList(bytes);
+        Map<String, dynamic> params = {"bytes": uint8Bytes};
         return PrinterConnectStatusResult(
             isSuccess: await flutterPrinterChannel.invokeMethod('sendDataByte', params) ?? false);
       } else if (Platform.isIOS) {
@@ -281,13 +285,14 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
 
   @override
   Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
-      {BluetoothPrinterInput? model, int delayBetweenMs = 50}) async {
+      {BluetoothPrinterInput? model, int delayBetweenMs = 50, bool useDedicatedSocket = false}) async {
     final unsplitBytes = bytes.flattenedToList;
     try {
       if (Platform.isAndroid) {
         // final connected = await _connect();
         // if (!connected) return false;
-        Map<String, dynamic> params = {"bytes": unsplitBytes};
+        Uint8List uint8Bytes = Uint8List.fromList(unsplitBytes);
+        Map<String, dynamic> params = {"bytes": uint8Bytes};
         return PrinterConnectStatusResult(
             isSuccess: await flutterPrinterChannel.invokeMethod('sendDataByte', params) ?? false);
       } else if (Platform.isIOS) {
@@ -308,5 +313,18 @@ class BluetoothPrinterConnector implements PrinterConnector<BluetoothPrinterInpu
   Future<PrinterConnectStatusResult> sendWithRetries(List<int> bytes, [BluetoothPrinterInput? model]) {
     // TODO: implement sendWithRetries
     throw UnimplementedError();
+  }
+
+  @override
+  Future<PrinterConnectStatusResult> connectDedicatedSocket(BluetoothPrinterInput model) async {
+    return PrinterConnectStatusResult(
+      isSuccess: false,
+      exception: 'No connectDedicatedSocket implementation for bt connection',
+    );
+  }
+
+  @override
+  Future<bool> disconnectDedicatedSocket({int? delayMs, required String printerIp}) async {
+    throw 'No disconnectDedicatedSocket implementation for bt connection';
   }
 }

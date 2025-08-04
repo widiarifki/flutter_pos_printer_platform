@@ -12,6 +12,8 @@ class PrinterManager {
   final tcpPrinterConnector = TcpPrinterConnector.instance;
   final usbPrinterConnector = UsbPrinterConnector.instance;
 
+  bool useDedicatedSocket = false;
+
   PrinterManager._();
 
   static PrinterManager _instance = PrinterManager._();
@@ -34,6 +36,9 @@ class PrinterManager {
     }
   }
 
+  PrinterManager enableDedicatedSocket(bool value) {
+    return this..useDedicatedSocket = value;
+  }
 
   Future<bool> checkPrinterStatus({required PrinterType type, required BasePrinterInput model}) async {
     if (type == PrinterType.network) {
@@ -158,7 +163,9 @@ class PrinterManager {
       }
     } else {
       try {
-        var conn = await tcpPrinterConnector.connect(model as TcpPrinterInput);
+        var conn = useDedicatedSocket
+            ? await tcpPrinterConnector.connectDedicatedSocket(model as TcpPrinterInput)
+            : await tcpPrinterConnector.connect(model as TcpPrinterInput);
         return conn;
       } catch (e, stackTrace) {
         throw Exception('Err tcpPrinterConnector.connect: ${e}, $stackTrace');
@@ -166,13 +173,17 @@ class PrinterManager {
     }
   }
 
-  Future<bool> disconnect({required PrinterType type, int? delayMs}) async {
+  Future<bool> disconnect({required PrinterType type, int? delayMs, String? dedicatedSocketIp}) async {
     if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
       return await bluetoothPrinterConnector.disconnect();
     } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {
       return await usbPrinterConnector.disconnect(delayMs: delayMs);
     } else {
-      return await tcpPrinterConnector.disconnect();
+      if (dedicatedSocketIp != null && tcpPrinterConnector.socketsPerIp.containsKey(dedicatedSocketIp!)) {
+        return await tcpPrinterConnector.disconnectDedicatedSocket(printerIp: dedicatedSocketIp);
+      } else {
+        return await tcpPrinterConnector.disconnect();
+      }
     }
   }
 
@@ -183,7 +194,8 @@ class PrinterManager {
     } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {
       return await usbPrinterConnector.send(bytes);
     } else {
-      return await tcpPrinterConnector.send(bytes, model as TcpPrinterInput?);
+      return await tcpPrinterConnector.send(bytes,
+          model: model as TcpPrinterInput?, useDedicatedSocket: useDedicatedSocket);
     }
   }
 
@@ -209,7 +221,22 @@ class PrinterManager {
       return await usbPrinterConnector.splitSend(bytes);
     } else {
       return await tcpPrinterConnector.splitSend(bytes,
-          model: model as TcpPrinterInput?, delayBetweenMs: delayBetweenMs);
+          model: model as TcpPrinterInput?, delayBetweenMs: delayBetweenMs, useDedicatedSocket: useDedicatedSocket);
+    }
+  }
+
+  Future<bool> disconnectAllSocket({required PrinterType type, int? delayMs}) async {
+    if (type == PrinterType.bluetooth && (Platform.isIOS || Platform.isAndroid)) {
+      return await bluetoothPrinterConnector.disconnect();
+    } else if (type == PrinterType.usb && (Platform.isAndroid || Platform.isWindows)) {
+      return await usbPrinterConnector.disconnect(delayMs: delayMs);
+    } else {
+      bool disconnected = false;
+      disconnected = await tcpPrinterConnector.disconnect();
+      for (final ip in tcpPrinterConnector.socketsPerIp.keys) {
+        disconnected = await tcpPrinterConnector.disconnectDedicatedSocket(printerIp: ip);
+      }
+      return disconnected;
     }
   }
 
