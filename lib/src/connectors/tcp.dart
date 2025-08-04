@@ -359,7 +359,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
       _log('6. Successfully sent all ${bytes.length} print sections $extraLog', level: 'warn');
       return PrinterConnectStatusResult(isSuccess: true);
     } catch (e, stackTrace) {
-      _log('7. Failed to splitSend print job $extraLog: $e', level: 'error', error: stackTrace);
+      _log('7. Failed to splitSend print job $extraLog: $e', level: 'error', error: e, stackTrace: stackTrace);
 
       // Record printer issues
       if (model != null) {
