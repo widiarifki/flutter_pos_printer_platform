@@ -252,4 +252,10 @@ class UsbPrinterConnector implements PrinterConnector<UsbPrinterInput> {
     else
       return PrinterConnectStatusResult(isSuccess: false, exception: Exception('else platform'));
   }
+
+  @override
+  Future<PrinterConnectStatusResult> sendWithRetries(List<int> bytes, [UsbPrinterInput? model]) {
+    // TODO: implement sendWithRetries
+    throw UnimplementedError();
+  }
 }
