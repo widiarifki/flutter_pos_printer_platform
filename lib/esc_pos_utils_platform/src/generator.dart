@@ -76,17 +76,21 @@ class Generator {
         .replaceAll("»", '"')
         .replaceAll(" ", ' ')
         .replaceAll("•", '.')
-        .replaceNonAscii()
-        .replaceNonPrintable(replaceWith: '');
+        .replaceNonAscii();
     if (!isKanji) {
+      text = text.replaceNonPrintable(replaceWith: '');
       return latin1.encode(text);
     } else {
+      return utf8.encode(text);
       return Uint8List.fromList(gbk_bytes.encode(text));
     }
   }
 
-  List _getLexemes(String text) {
-    String textCleaned = text.replaceNonAscii().replaceNonPrintable(replaceWith: '');
+  List _getLexemes(String text, {bool containsChinese = false}) {
+    String textCleaned = text.replaceNonAscii();
+    if (!containsChinese) {
+      textCleaned = textCleaned.replaceNonPrintable(replaceWith: '');
+    }
     final List<String> lexemes = List.empty(growable: true);
     final List<bool> isLexemeChinese = List.empty(growable: true);
     int start = 0;
@@ -355,7 +359,7 @@ class Generator {
       // Ensure at least one line break after the text
       bytes += emptyLines(linesAfter + 1);
     } else {
-      bytes += _mixedKanji(text.replaceNonAscii().replaceNonPrintable(replaceWith: ''),
+      bytes += _mixedKanji(text/*.replaceNonAscii().replaceNonPrintable(replaceWith: '')*/,
           styles: styles, linesAfter: linesAfter);
     }
     return bytes;
@@ -754,7 +758,7 @@ class Generator {
     int? maxCharsPerLine,
   }) {
     List<int> bytes = List.empty(growable: true);
-    final list = _getLexemes(text);
+    final list = _getLexemes(text, containsChinese: true);
     final List<String> lexemes = list[0];
     final List<bool> isLexemeChinese = list[1];
 
