@@ -89,7 +89,7 @@ class Generator {
         encodedText = utf8.encode(text);
       }
       return Uint8List.fromList(encodedText);
-      // return Uint8List.fromList(gbk_bytes.encode(text));
+      // return Uint8List.fromList(gbk2.gbk_bytes.encode(text));
     }
   }
 
