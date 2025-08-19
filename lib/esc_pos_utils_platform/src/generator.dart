@@ -7,10 +7,11 @@
  */
 
 import 'dart:convert';
+import 'package:enough_convert/enough_convert.dart' show gbk;
 import 'package:flutter/services.dart';
 import 'package:flutter_pos_printer_platform/src/ext.dart';
 import 'package:image/image.dart' as img;
-import 'package:gbk_codec/gbk_codec.dart';
+import 'package:gbk_codec/gbk_codec.dart' as gbk2;
 import "package:hex/hex.dart";
 import '../esc_pos_utils_platform.dart';
 import 'commands.dart';
@@ -68,7 +69,7 @@ class Generator {
     return charsPerLine;
   }
 
-  Uint8List _encode(String text, {bool isKanji = false}) {
+  Uint8List _encode(String text, {bool isKanji = false, String? nonLatinEncoding}) {
     // replace some non-ascii characters
     text = text
         .replaceAll("’", "'")
@@ -81,8 +82,14 @@ class Generator {
       text = text.replaceNonPrintable(replaceWith: '');
       return latin1.encode(text);
     } else {
-      return utf8.encode(text);
-      return Uint8List.fromList(gbk_bytes.encode(text));
+      late List<int> encodedText;
+      if (nonLatinEncoding == "GBK") {
+        encodedText = gbk.encode(text);
+      } else {
+        encodedText = utf8.encode(text);
+      }
+      return Uint8List.fromList(encodedText);
+      // return Uint8List.fromList(gbk2.gbk_bytes.encode(text));
     }
   }
 
@@ -347,6 +354,7 @@ class Generator {
     int linesAfter = 0,
     bool containsChinese = false,
     int? maxCharsPerLine,
+    String? nonLatinEncoding,
   }) {
     List<int> bytes = List.empty(growable: true);
     if (!containsChinese) {
@@ -359,8 +367,7 @@ class Generator {
       // Ensure at least one line break after the text
       bytes += emptyLines(linesAfter + 1);
     } else {
-      bytes += _mixedKanji(text/*.replaceNonAscii().replaceNonPrintable(replaceWith: '')*/,
-          styles: styles, linesAfter: linesAfter);
+      bytes += _mixedKanji(text, styles: styles, linesAfter: linesAfter, nonLatinEncoding: nonLatinEncoding);
     }
     return bytes;
   }
@@ -756,6 +763,7 @@ class Generator {
     PosStyles styles = const PosStyles(),
     int linesAfter = 0,
     int? maxCharsPerLine,
+    String? nonLatinEncoding,
   }) {
     List<int> bytes = List.empty(growable: true);
     final list = _getLexemes(text, containsChinese: true);
@@ -766,7 +774,7 @@ class Generator {
     int? colInd = 0;
     for (var i = 0; i < lexemes.length; ++i) {
       bytes += _text(
-        _encode(lexemes[i], isKanji: isLexemeChinese[i]),
+        _encode(lexemes[i], isKanji: isLexemeChinese[i], nonLatinEncoding: nonLatinEncoding),
         styles: styles,
         colInd: colInd,
         isKanji: isLexemeChinese[i],
