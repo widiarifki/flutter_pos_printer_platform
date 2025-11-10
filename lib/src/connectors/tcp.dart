@@ -289,7 +289,7 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
     if (!connectionStatus.isSuccess) return connectionStatus;
 
     final extraLog = '(useDedicatedSocket:$useDedicatedSocket ${model?.ipAddress})';
-    final socketConnection = useDedicatedSocket ? socketsPerIp[model?.ipAddress] : _socket;
+    var socketConnection = useDedicatedSocket ? socketsPerIp[model?.ipAddress] : _socket;
     try {
       if (socketConnection == null) {
         throw SocketException('Socket is null');
@@ -323,6 +323,10 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
 
       // More conservative flushing strategy
       for (int i = 0; i < bytes.length; i++) {
+        if (socketConnection == null) throw SocketException('Socket is null');
+
+        Socket validSocket = socketConnection;
+
         final section = bytes[i];
         if (section.isEmpty) continue;
 
@@ -331,22 +335,36 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
           // Break large sections into chunks of 4KB
           final chunks = _splitIntoChunks(section, 4096);
           for (final chunk in chunks) {
-            socketConnection.add(Uint8List.fromList(chunk));
+            try {
+              validSocket.add(Uint8List.fromList(chunk));
+            } catch (e, s) {
+              if (e.toString().contains('StreamSink is closed')) {
+                if (model != null) {
+                  _log('Split send try to reconnect after StreamSink is closed i:$i $extraLog', level: 'error', error: e, stackTrace: s);
+                  useDedicatedSocket ? await connectDedicatedSocket(model) : await connect(model);
+                }
+                socketConnection = useDedicatedSocket ? socketsPerIp[model?.ipAddress] : _socket;
+                if (socketConnection == null) throw SocketException('Socket is null');
+                validSocket = socketConnection;
+                validSocket.add(Uint8List.fromList(chunk));
+              }
+            }
+
             _log('4. Sent print chunk ${i + 1}/${bytes.length}, chunk size: ${bytes[i].length} bytes $extraLog', level: 'info');
 
-            await socketConnection.flush().timeout(Duration(seconds: 5), onTimeout: () {
+            await validSocket.flush().timeout(Duration(seconds: 5), onTimeout: () {
               throw TimeoutException('Flush operation timed out - printer may be busy');
             });
             await Future.delayed(Duration(milliseconds: 20));
           }
         } else {
           // Small enough section to send at once
-          socketConnection.add(Uint8List.fromList(section));
+          validSocket.add(Uint8List.fromList(section));
           _log('5. Sent small section print ${i + 1}/${bytes.length}, section size: ${bytes[i].length} bytes $extraLog',
               level: 'info');
 
           // Flush more frequently: always flush after each section
-          await socketConnection.flush().timeout(Duration(seconds: 3), onTimeout: () {
+          await validSocket.flush().timeout(Duration(seconds: 3), onTimeout: () {
             throw TimeoutException('Flush operation timed out - printer may be busy');
           });
         }
