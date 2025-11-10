@@ -562,20 +562,18 @@ class Generator {
   /// Print an image using (ESC *) command
   ///
   /// [image] is an instanse of class from [Image library](https://pub.dev/packages/image)
-  List<int> image(img.Image imgSrc, {PosAlign align = PosAlign.center}) {
+  List<int> image(img.Image imgSrc, {PosAlign align = PosAlign.center, bool highDensityHorizontal = true, bool highDensityVertical = true}) {
     List<int> bytes = List.empty(growable: true);
     // img.Image alignment
     bytes += setStyles(const PosStyles().copyWith(align: align));
 
     final img.Image image = img.Image.from(imgSrc); // make a copy
-    const bool highDensityHorizontal = true;
-    const bool highDensityVertical = true;
 
     img.invert(image);
     img.flip(image, img.Flip.horizontal);
     final img.Image imageRotated = img.copyRotate(image, 270);
 
-    const int lineHeight = highDensityVertical ? 3 : 1;
+    final int lineHeight = highDensityVertical ? 3 : 1;
     final List<List<int>> blobs = _toColumnFormat(imageRotated, lineHeight * 8);
 
     // Compress according to line density
@@ -587,7 +585,7 @@ class Generator {
     }
 
     final int heightPx = imageRotated.height;
-    const int densityByte = (highDensityHorizontal ? 1 : 0) + (highDensityVertical ? 32 : 0);
+    final int densityByte = (highDensityHorizontal ? 1 : 0) + (highDensityVertical ? 32 : 0);
 
     final List<int> header = List.from(cBitImg.codeUnits);
     header.add(densityByte);
