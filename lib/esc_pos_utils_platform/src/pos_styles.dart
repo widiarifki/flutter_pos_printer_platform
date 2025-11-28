@@ -19,6 +19,7 @@ class PosStyles {
     this.height = PosTextSize.size1,
     this.width = PosTextSize.size1,
     this.fontType,
+    this.fontColor = PosFontColor.black,
     this.codeTable,
   });
 
@@ -32,6 +33,7 @@ class PosStyles {
     this.height = PosTextSize.size1,
     this.width = PosTextSize.size1,
     this.fontType = PosFontType.fontA,
+    this.fontColor = PosFontColor.black,
     this.codeTable = "CP437",
   });
 
@@ -43,6 +45,7 @@ class PosStyles {
   final PosTextSize height;
   final PosTextSize width;
   final PosFontType? fontType;
+  final PosFontColor? fontColor;
   final String? codeTable;
 
   PosStyles copyWith({
@@ -54,6 +57,7 @@ class PosStyles {
     PosTextSize? height,
     PosTextSize? width,
     PosFontType? fontType,
+    PosFontColor? fontColor,
     String? codeTable,
   }) {
     return PosStyles(
@@ -65,6 +69,7 @@ class PosStyles {
       height: height ?? this.height,
       width: width ?? this.width,
       fontType: fontType ?? this.fontType,
+      fontColor: fontColor ?? this.fontColor,
       codeTable: codeTable ?? this.codeTable,
     );
   }

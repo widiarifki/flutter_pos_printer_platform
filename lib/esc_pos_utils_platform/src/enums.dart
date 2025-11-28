@@ -10,6 +10,7 @@ enum PosAlign { left, center, right }
 enum PosCutMode { full, partial }
 enum PosFontType { fontA, fontB }
 enum PosDrawer { pin2, pin5 }
+enum PosFontColor { black, red }
 
 /// Choose image printing function
 /// bitImageRaster: GS v 0 (obsolete)

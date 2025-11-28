@@ -40,21 +40,20 @@ abstract class BasePrinterInput {}
 
 //
 abstract class PrinterConnector<T> {
-  Future<PrinterConnectStatusResult> send(List<int> bytes, [T? model]);
+  Future<PrinterConnectStatusResult> send(List<int> bytes, {T? model, bool useDedicatedSocket = false});
 
   Future<PrinterConnectStatusResult> sendWithRetries(List<int> bytes, [T? model]);
 
   Future<PrinterConnectStatusResult> connect(T model);
 
+  Future<PrinterConnectStatusResult> connectDedicatedSocket(T model);
+
   Future<bool> disconnect({int? delayMs});
 
-  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {
-    T? model,
-    int? fixedDelayMs,
-    int? dynamicDelayBaseMs,
-    double? sizeMultiplier,
-    Duration? flushTimeout,
-  });
+  Future<bool> disconnectDedicatedSocket({int? delayMs, required String printerIp});
+
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
+      {T? model, int delayBetweenMs = 50, bool useDedicatedSocket = false});
 }
 
 abstract class GenericPrinter<T> extends Printer {

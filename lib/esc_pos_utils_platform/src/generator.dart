@@ -7,10 +7,11 @@
  */
 
 import 'dart:convert';
+import 'package:enough_convert/enough_convert.dart' show gbk;
 import 'package:flutter/services.dart';
 import 'package:flutter_pos_printer_platform/src/ext.dart';
 import 'package:image/image.dart' as img;
-import 'package:gbk_codec/gbk_codec.dart';
+import 'package:gbk_codec/gbk_codec.dart' as gbk2;
 import "package:hex/hex.dart";
 import '../esc_pos_utils_platform.dart';
 import 'commands.dart';
@@ -26,6 +27,7 @@ class Generator {
   // Global styles
   String? _codeTable;
   PosFontType? _font;
+  PosFontColor? _fontColor;
 
   // Current styles
   PosStyles _styles = const PosStyles();
@@ -68,7 +70,7 @@ class Generator {
     return charsPerLine;
   }
 
-  Uint8List _encode(String text, {bool isKanji = false}) {
+  Uint8List _encode(String text, {bool isKanji = false, String? nonLatinEncoding}) {
     // replace some non-ascii characters
     text = text
         .replaceAll("’", "'")
@@ -76,17 +78,27 @@ class Generator {
         .replaceAll("»", '"')
         .replaceAll(" ", ' ')
         .replaceAll("•", '.')
-        .replaceNonAscii()
-        .replaceNonPrintable(replaceWith: '');
+        .replaceNonAscii();
     if (!isKanji) {
+      text = text.replaceNonPrintable(replaceWith: '');
       return latin1.encode(text);
     } else {
-      return Uint8List.fromList(gbk_bytes.encode(text));
+      late List<int> encodedText;
+      if (nonLatinEncoding == "GBK") {
+        encodedText = gbk.encode(text);
+      } else {
+        encodedText = utf8.encode(text);
+      }
+      return Uint8List.fromList(encodedText);
+      // return Uint8List.fromList(gbk2.gbk_bytes.encode(text));
     }
   }
 
-  List _getLexemes(String text) {
-    String textCleaned = text.replaceNonAscii().replaceNonPrintable(replaceWith: '');
+  List _getLexemes(String text, {bool containsChinese = false}) {
+    String textCleaned = text.replaceNonAscii();
+    if (!containsChinese) {
+      textCleaned = textCleaned.replaceNonPrintable(replaceWith: '');
+    }
     final List<String> lexemes = List.empty(growable: true);
     final List<bool> isLexemeChinese = List.empty(growable: true);
     int start = 0;
@@ -231,7 +243,7 @@ class Generator {
     bytes += cInit.codeUnits;
     _styles = const PosStyles();
     bytes += setGlobalCodeTable(_codeTable);
-    bytes += setGlobalFont(_font);
+    bytes += setGlobalFont(_font, color: _fontColor);
     return bytes;
   }
 
@@ -251,18 +263,27 @@ class Generator {
 
   /// Set global font which will be used instead of the default printer's font
   /// (even after resetting)
-  List<int> setGlobalFont(PosFontType? font, {int? maxCharsPerLine}) {
+  List<int> setGlobalFont(PosFontType? font, {int? maxCharsPerLine, PosFontColor? color}) {
     List<int> bytes = List.empty(growable: true);
     _font = font;
+    _fontColor = color;
     if (font != null) {
       _maxCharsPerLine = maxCharsPerLine ?? _getMaxCharsPerLine(font);
       bytes += font == PosFontType.fontB ? cFontB.codeUnits : cFontA.codeUnits;
       _styles = _styles.copyWith(fontType: font);
     }
+    if (color != null) {
+      bytes += color == PosFontColor.red ? cFontColorRed.codeUnits : cFontColorBlack.codeUnits;
+      _styles = _styles.copyWith(fontColor: color);
+    }
     return bytes;
   }
 
-  List<int> setStyles(PosStyles styles, {bool isKanji = false}) {
+  List<int> setStyles(PosStyles styles, {bool isKanji = false, bool isDotMatrix = false}) {
+    return isDotMatrix ? _setStylesDotMatrix(styles, isKanji: isKanji) : _setStyles(styles, isKanji: isKanji);
+  }
+
+  List<int> _setStyles(PosStyles styles, {bool isKanji = false}) {
     List<int> bytes = List.empty(growable: true);
     if (styles.align != _styles.align) {
       bytes += latin1.encode(
@@ -327,6 +348,93 @@ class Generator {
     return bytes;
   }
 
+  List<int> _setStylesDotMatrix(PosStyles styles, {bool isKanji = false}) {
+    List<int> bytes = List.empty(growable: true);
+
+    bool isReset = false;
+    // Set font color (only for supported dot matrix printer)
+    if (styles.fontColor != null && styles.fontColor != _styles.fontColor) {
+      bytes += reset();
+      isReset = true;
+      bytes += styles.fontColor == PosFontColor.red
+          ? cFontColorRed.codeUnits
+          : cFontColorBlack.codeUnits;
+      _styles = _styles.copyWith(fontColor: styles.fontColor);
+    } else if (_fontColor != null && _fontColor != _styles.fontColor) {
+      bytes += reset();
+      isReset = true;
+      bytes += _fontColor == PosFontColor.red
+          ? cFontColorRed.codeUnits
+          : cFontColorBlack.codeUnits;
+      _styles = _styles.copyWith(fontColor: _fontColor);
+    }
+
+    // Characters size
+    if (styles.height.value != _styles.height.value || styles.width.value != _styles.width.value) {
+      bytes += Uint8List.fromList(
+        List.from(cSizeESCn.codeUnits)..add(PosTextSize.decSize(styles.height, styles.width)),
+      );
+      _styles = _styles.copyWith(height: styles.height, width: styles.width);
+    }
+
+    if (styles.align != _styles.align) {
+      bytes += latin1.encode(
+          styles.align == PosAlign.left ? cAlignLeft : (styles.align == PosAlign.center ? cAlignCenter : cAlignRight));
+      _styles = _styles.copyWith(align: styles.align);
+    }
+
+    if (styles.bold != _styles.bold) {
+      bytes += styles.bold ? cBoldOn.codeUnits : cBoldOff.codeUnits;
+      _styles = _styles.copyWith(bold: styles.bold);
+    }
+    if (styles.turn90 != _styles.turn90) {
+      bytes += styles.turn90 ? cTurn90On.codeUnits : cTurn90Off.codeUnits;
+      _styles = _styles.copyWith(turn90: styles.turn90);
+    }
+    if (styles.reverse != _styles.reverse) {
+      bytes += styles.reverse ? cReverseOn.codeUnits : cReverseOff.codeUnits;
+      _styles = _styles.copyWith(reverse: styles.reverse);
+    }
+    if (styles.underline != _styles.underline) {
+      bytes += styles.underline ? cUnderline1dot.codeUnits : cUnderlineOff.codeUnits;
+      _styles = _styles.copyWith(underline: styles.underline);
+    }
+
+    // Set font type
+    if (styles.fontType != null && styles.fontType != _styles.fontType) {
+      bytes += styles.fontType == PosFontType.fontB ? cFontB.codeUnits : cFontA.codeUnits;
+      _styles = _styles.copyWith(fontType: styles.fontType);
+    } else if (_font != null && _font != _styles.fontType) {
+      bytes += _font == PosFontType.fontB ? cFontB.codeUnits : cFontA.codeUnits;
+      _styles = _styles.copyWith(fontType: _font);
+    } else {
+      bytes += styles.fontType == PosFontType.fontB ? cFontB.codeUnits : cFontA.codeUnits;
+    }
+
+    // Set Kanji mode
+    if (isKanji) {
+      bytes += cKanjiOn.codeUnits;
+    } else {
+      bytes += cKanjiOff.codeUnits;
+    }
+
+    // Set local code table
+    if (styles.codeTable != null) {
+      bytes += Uint8List.fromList(
+        List.from(cCodeTable.codeUnits)..add(_profile.getCodePageId(styles.codeTable)),
+      );
+      _styles = _styles.copyWith(align: styles.align, codeTable: styles.codeTable);
+    } else if (_codeTable != null) {
+      bytes += Uint8List.fromList(
+        List.from(cCodeTable.codeUnits)..add(_profile.getCodePageId(_codeTable)),
+      );
+      _styles = _styles.copyWith(align: styles.align, codeTable: _codeTable);
+    }
+
+    return bytes;
+  }
+
+
   /// Sens raw command(s)
   List<int> rawBytes(List<int> cmd, {bool isKanji = false}) {
     List<int> bytes = List.empty(growable: true);
@@ -343,6 +451,8 @@ class Generator {
     int linesAfter = 0,
     bool containsChinese = false,
     int? maxCharsPerLine,
+    String? nonLatinEncoding,
+        bool isDotMatrix = false
   }) {
     List<int> bytes = List.empty(growable: true);
     if (!containsChinese) {
@@ -351,12 +461,12 @@ class Generator {
         styles: styles,
         isKanji: containsChinese,
         maxCharsPerLine: maxCharsPerLine,
+        isDotMatrix: isDotMatrix
       );
       // Ensure at least one line break after the text
       bytes += emptyLines(linesAfter + 1);
     } else {
-      bytes += _mixedKanji(text.replaceNonAscii().replaceNonPrintable(replaceWith: ''),
-          styles: styles, linesAfter: linesAfter);
+      bytes += _mixedKanji(text, styles: styles, linesAfter: linesAfter, nonLatinEncoding: nonLatinEncoding, isDotMatrix: isDotMatrix);
     }
     return bytes;
   }
@@ -551,20 +661,18 @@ class Generator {
   /// Print an image using (ESC *) command
   ///
   /// [image] is an instanse of class from [Image library](https://pub.dev/packages/image)
-  List<int> image(img.Image imgSrc, {PosAlign align = PosAlign.center}) {
+  List<int> image(img.Image imgSrc, {PosAlign align = PosAlign.center, bool highDensityHorizontal = true, bool highDensityVertical = true}) {
     List<int> bytes = List.empty(growable: true);
     // img.Image alignment
     bytes += setStyles(const PosStyles().copyWith(align: align));
 
     final img.Image image = img.Image.from(imgSrc); // make a copy
-    const bool highDensityHorizontal = true;
-    const bool highDensityVertical = true;
 
     img.invert(image);
     img.flip(image, img.Flip.horizontal);
     final img.Image imageRotated = img.copyRotate(image, 270);
 
-    const int lineHeight = highDensityVertical ? 3 : 1;
+    final int lineHeight = highDensityVertical ? 3 : 1;
     final List<List<int>> blobs = _toColumnFormat(imageRotated, lineHeight * 8);
 
     // Compress according to line density
@@ -576,7 +684,7 @@ class Generator {
     }
 
     final int heightPx = imageRotated.height;
-    const int densityByte = (highDensityHorizontal ? 1 : 0) + (highDensityVertical ? 32 : 0);
+    final int densityByte = (highDensityHorizontal ? 1 : 0) + (highDensityVertical ? 32 : 0);
 
     final List<int> header = List.from(cBitImg.codeUnits);
     header.add(densityByte);
@@ -678,6 +786,7 @@ class Generator {
       align: PosAlign.center,
       height: PosTextSize.size1,
       width: PosTextSize.size1,
+      fontType: PosFontType.fontA
     ));
     bytes += text(List.filled(n, ch1).join(), linesAfter: linesAfter);
     return bytes;
@@ -709,8 +818,10 @@ class Generator {
     bool isKanji = false,
     int colWidth = 12,
     int? maxCharsPerLine,
+    bool isDotMatrix = false
   }) {
     List<int> bytes = List.empty(growable: true);
+
     if (colInd != null) {
       double charWidth = _getCharWidth(styles, maxCharsPerLine: maxCharsPerLine);
       double fromPos = _colIndToPosition(colInd);
@@ -740,7 +851,7 @@ class Generator {
       );
     }
 
-    bytes += setStyles(styles, isKanji: isKanji);
+    bytes += setStyles(styles, isKanji: isKanji, isDotMatrix: isDotMatrix);
 
     bytes += textBytes;
     return bytes;
@@ -752,9 +863,11 @@ class Generator {
     PosStyles styles = const PosStyles(),
     int linesAfter = 0,
     int? maxCharsPerLine,
+    String? nonLatinEncoding,
+    bool isDotMatrix = false
   }) {
     List<int> bytes = List.empty(growable: true);
-    final list = _getLexemes(text);
+    final list = _getLexemes(text, containsChinese: true);
     final List<String> lexemes = list[0];
     final List<bool> isLexemeChinese = list[1];
 
@@ -762,17 +875,19 @@ class Generator {
     int? colInd = 0;
     for (var i = 0; i < lexemes.length; ++i) {
       bytes += _text(
-        _encode(lexemes[i], isKanji: isLexemeChinese[i]),
+        _encode(lexemes[i], isKanji: isLexemeChinese[i], nonLatinEncoding: nonLatinEncoding),
         styles: styles,
         colInd: colInd,
         isKanji: isLexemeChinese[i],
         maxCharsPerLine: maxCharsPerLine,
+        isDotMatrix: isDotMatrix
       );
       // Define the absolute position only once (we print one line only)
       colInd = null;
     }
 
     bytes += emptyLines(linesAfter + 1);
+
     return bytes;
   }
 // ************************ (end) Internal command generators ************************

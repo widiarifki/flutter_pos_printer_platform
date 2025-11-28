@@ -189,7 +189,10 @@ class UsbPrinterConnector implements PrinterConnector<UsbPrinterInput> {
   }
 
   @override
-  Future<PrinterConnectStatusResult> send(List<int> bytes, [UsbPrinterInput? model]) async {
+  Future<PrinterConnectStatusResult> send(List<int> bytes, {
+    UsbPrinterInput? model,
+    bool useDedicatedSocket = false
+  }) async {
     if (Platform.isAndroid)
       try {
         // final connected = await _connect();
@@ -218,13 +221,8 @@ class UsbPrinterConnector implements PrinterConnector<UsbPrinterInput> {
   }
 
   @override
-  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes, {
-    UsbPrinterInput? model,
-    int? fixedDelayMs,
-    int? dynamicDelayBaseMs,
-    double? sizeMultiplier,
-    Duration? flushTimeout,
-  }) async {
+  Future<PrinterConnectStatusResult> splitSend(List<List<int>> bytes,
+      {UsbPrinterInput? model, int delayBetweenMs = 50, bool useDedicatedSocket = false}) async {
     final unsplitBytes = bytes.flattenedToList;
     if (Platform.isAndroid)
       try {
@@ -257,5 +255,18 @@ class UsbPrinterConnector implements PrinterConnector<UsbPrinterInput> {
   Future<PrinterConnectStatusResult> sendWithRetries(List<int> bytes, [UsbPrinterInput? model]) {
     // TODO: implement sendWithRetries
     throw UnimplementedError();
+  }
+
+  @override
+  Future<PrinterConnectStatusResult> connectDedicatedSocket(UsbPrinterInput model) async {
+    return PrinterConnectStatusResult(
+      isSuccess: false,
+      exception: 'No connectDedicatedSocket implementation for usb connection',
+    );
+  }
+
+  @override
+  Future<bool> disconnectDedicatedSocket({int? delayMs, required String printerIp}) async {
+    throw 'No disconnectDedicatedSocket implementation for usb connection';
   }
 }
